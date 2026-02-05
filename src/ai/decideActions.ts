@@ -3,6 +3,7 @@ import { FACTION_TEMPLATES } from '../data/factions.js';
 import { SAFETY_THRESHOLDS } from '../core/constants.js';
 import { ActionChoice, FactionState, GameState, Openness } from '../core/types.js';
 import { pickOne } from '../core/utils.js';
+import { decideActionsWithLlm } from './llmDecision.js';
 
 const ACTION_IDS = new Set(ACTIONS.map((action) => action.id));
 
@@ -34,7 +35,7 @@ const alliedLabs = (factionId: string, state: GameState): FactionState[] => {
   return [];
 };
 
-export const decideActions = (state: GameState, factionId: string, rng: () => number): ActionChoice[] => {
+export const decideActionsHeuristic = (state: GameState, factionId: string, rng: () => number): ActionChoice[] => {
   const faction = state.factions[factionId];
   if (!faction) return [];
   const strategy = getStrategy(factionId);
@@ -96,4 +97,14 @@ export const decideActions = (state: GameState, factionId: string, rng: () => nu
   }
 
   return choices.slice(0, 2);
+};
+
+export const decideActions = async (
+  state: GameState,
+  factionId: string,
+  rng: () => number,
+): Promise<ActionChoice[]> => {
+  const llmChoices = await decideActionsWithLlm(state, factionId);
+  if (llmChoices) return llmChoices;
+  return decideActionsHeuristic(state, factionId, rng);
 };

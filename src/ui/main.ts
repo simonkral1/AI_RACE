@@ -3,6 +3,12 @@ import './styles.css';
 import { createInitialState } from '../core/state.js';
 import { resolveTurn } from '../core/engine.js';
 import { decideActions } from '../ai/decideActions.js';
+import {
+  applyNarrativeEffects,
+  generateDirective,
+  resolveNarrativeEffects,
+  type NarrativeDirective,
+} from '../ai/narrativeAI.js';
 import { mulberry32, round1 } from '../core/utils.js';
 import { ActionChoice, GameState, TechNode, BranchId } from '../core/types.js';
 import { ACTIONS } from '../data/actions.js';
@@ -49,8 +55,8 @@ let playerOrders: ActionChoice[] = [
   { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
 ];
 
-// Store player's natural language strategy answer
-let strategyAnswer = '';
+// Store player's narrative directive (free-form action)
+let narrativeDirective = '';
 
 // Tech tree controller reference
 let techTreeController: {
@@ -266,10 +272,14 @@ const renderOrdersSection = (): void => {
   };
 
   const strategyQuestion = renderStrategyQuestion(
-    strategyOptions,
-    strategyAnswer,
+    {
+      ...strategyOptions,
+      promptOverride: 'Narrative Directive (one sentence)',
+      placeholder: 'Example: Invest in safety research and build compute.',
+    },
+    narrativeDirective,
     (answer) => {
-      strategyAnswer = answer;
+      narrativeDirective = answer;
     }
   );
 
@@ -347,6 +357,29 @@ const readPlayerOrders = (): ActionChoice[] => {
   return [...playerOrders];
 };
 
+const collectNarrativeDirectives = async (): Promise<NarrativeDirective[]> => {
+  const directives: NarrativeDirective[] = [];
+  const trimmed = narrativeDirective.trim();
+  if (trimmed) {
+    directives.push({ factionId: playerFactionId, text: trimmed, source: 'player' });
+  }
+
+  const aiFactions = Object.keys(state.factions).filter((id) => id !== playerFactionId);
+  const aiDirectives = await Promise.all(
+    aiFactions.map(async (id) => ({
+      factionId: id,
+      text: await generateDirective(state, id, rng),
+      source: 'ai' as const,
+    }))
+  );
+
+  for (const directive of aiDirectives) {
+    if (directive.text) directives.push(directive);
+  }
+
+  return directives;
+};
+
 let isAdvancing = false;
 
 const advance = async (): Promise<void> => {
@@ -354,6 +387,7 @@ const advance = async (): Promise<void> => {
   if (isAdvancing) return;
   isAdvancing = true;
   try {
+    const directives = await collectNarrativeDirectives();
     const choices: Record<string, ActionChoice[]> = {};
     for (const factionId of Object.keys(state.factions)) {
       if (factionId === playerFactionId) {
@@ -363,6 +397,27 @@ const advance = async (): Promise<void> => {
       }
     }
     resolveTurn(state, choices, rng);
+
+    if (directives.length) {
+      for (const directive of directives) {
+        const faction = state.factions[directive.factionId];
+        if (!faction) continue;
+        state.log.push(`${faction.name} directive: ${directive.text}`);
+      }
+    }
+
+    if (!state.gameOver && directives.length) {
+      const gmResult = await resolveNarrativeEffects(state, directives);
+      if (gmResult) {
+        const gmLogs = applyNarrativeEffects(state, gmResult);
+        state.log.push(...gmLogs);
+      }
+    }
+
+    if (narrativeDirective) {
+      narrativeDirective = '';
+      renderOrdersSection();
+    }
     render(state);
   } finally {
     isAdvancing = false;
@@ -383,8 +438,8 @@ const reset = (): void => {
     { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
     { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
   ];
-  // Reset strategy answer
-  strategyAnswer = '';
+  // Reset narrative directive
+  narrativeDirective = '';
   // Destroy and recreate tech tree controller on reset
   if (techTreeController) {
     techTreeController.destroy();
@@ -469,7 +524,7 @@ const renderGameToText = (): string => {
     activeBranch,
     selectedTechId,
     globalSafety: round1(state.globalSafety),
-    strategyAnswer: strategyAnswer || null,
+    narrativeDirective: narrativeDirective || null,
     coordSystem: 'origin top-left, +x right, +y down',
     factions: Object.values(state.factions).map((faction) => ({
       id: faction.id,

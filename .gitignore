@@ -7,6 +7,12 @@
 
 # build output
 /dist/
+/output/
 
 # misc
 .DS_Store
+
+# env files
+.env
+.env.*
+!.env.example

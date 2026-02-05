@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:cli": "tsx src/cli.ts",
     "sim": "tsx src/cli.ts --sim",
+    "llm-proxy": "tsx server/llmProxy.ts",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -18,6 +19,7 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^25.2.0",
+    "dotenv": "^16.4.5",
     "playwright": "^1.58.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
