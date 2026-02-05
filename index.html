@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AGI Race</title>
+    <script type="module" src="/src/ui/main.ts"></script>
+  </head>
+  <body>
+    <div id="app" class="app">
+      <div id="startOverlay" class="overlay">
+        <div class="overlay__card">
+          <div class="overlay__title">AGI RACE</div>
+          <div class="overlay__subtitle">Choose your faction. The board will reflect your point of view.</div>
+          <div id="startOptions" class="overlay__options"></div>
+          <button id="startGame" class="btn">Enter Campaign</button>
+        </div>
+      </div>
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand__title">AGI RACE</div>
+          <div class="brand__subtitle">Quarterly strategy sim · 2026 → 2033</div>
+        </div>
+        <div class="topbar__status">
+          <div class="pill" id="turnLabel">2026 Q1</div>
+          <div class="pill pill--safety">Global Safety <span id="globalSafety">0</span></div>
+          <div class="pill pill--tension">Tension <span id="tension">Low</span></div>
+        </div>
+        <div class="topbar__actions">
+          <button id="nextTurn" class="btn">Advance Quarter</button>
+          <button id="reset" class="btn btn--ghost">Reset</button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel panel--factions">
+          <h2>Factions</h2>
+          <div id="factionList" class="faction-list"></div>
+        </section>
+
+        <section class="panel panel--map">
+          <h2>World Board</h2>
+          <div class="map">
+            <canvas id="gameCanvas" width="900" height="520" aria-label="World board"></canvas>
+          </div>
+        </section>
+
+        <section class="panel panel--intel">
+          <h2>Intel &amp; Decisions</h2>
+          <div class="intel-grid">
+            <div class="intel-card">
+              <div class="intel-title">Player Orders</div>
+              <div class="orders">
+                <label class="orders__label">
+                  <span>Play As</span>
+                  <select id="playerFaction" class="orders__select"></select>
+                </label>
+                <div class="orders__row" data-order-row="0">
+                  <select class="orders__select orders__action"></select>
+                  <select class="orders__select orders__openness">
+                    <option value="open">Open</option>
+                    <option value="secret">Secret</option>
+                  </select>
+                  <select class="orders__select orders__target"></select>
+                </div>
+                <div class="orders__row" data-order-row="1">
+                  <select class="orders__select orders__action"></select>
+                  <select class="orders__select orders__openness">
+                    <option value="open">Open</option>
+                    <option value="secret">Secret</option>
+                  </select>
+                  <select class="orders__select orders__target"></select>
+                </div>
+                <div class="orders__hint">Orders apply when you advance the quarter.</div>
+              </div>
+            </div>
+            <div class="intel-card">
+              <div class="intel-title">Focus Dossier</div>
+              <div id="focusCard" class="focus-card"></div>
+            </div>
+            <div class="intel-card">
+              <div class="intel-title">AGI Race Clock</div>
+              <div class="intel-body" id="agiClock">Early phase</div>
+            </div>
+            <div class="intel-card">
+              <div class="intel-title">Recent Actions</div>
+              <ul id="recentActions" class="log"></ul>
+            </div>
+          </div>
+          <div class="tech-tree">
+            <div class="tech-tree__header">
+              <div class="intel-title">Tech Tree</div>
+              <div class="tech-tree__meta" id="techTreeMeta">Progress for player faction</div>
+            </div>
+            <div id="techTree" class="tech-tree__grid"></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div class="footer__left">Build: MVP visual mock · Engine wired for turn simulation</div>
+        <div class="footer__right">
+          <span class="chip">Secret vs Open</span>
+          <span class="chip">Tech Tree</span>
+          <span class="chip">Espionage</span>
+        </div>
+      </footer>
+    </div>
+  </body>
+</html>
