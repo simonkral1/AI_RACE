@@ -1,5 +1,5 @@
-// Component that presents a strategic question and accepts natural language input
-// Questions rotate based on game state (turn number, safety level, etc.)
+// Component that presents a strategic question (or custom prompt) and accepts natural language input
+// Questions rotate based on game state (turn number, safety level, etc.) unless overridden
 
 import { div, span, el } from './base.js';
 

@@ -15,7 +15,7 @@ export interface FactionTemplate {
 export const FACTION_TEMPLATES: FactionTemplate[] = [
   {
     id: 'us_lab_a',
-    name: 'Orion Research',
+    name: 'OpenBrain',  // AI 2027-inspired: leading US AI lab
     type: 'lab',
     resources: {
       compute: 60,
@@ -38,7 +38,7 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
   },
   {
     id: 'us_lab_b',
-    name: 'Apex Dynamics',
+    name: 'Nexus Labs',  // AI 2027-inspired: aggressive US competitor
     type: 'lab',
     resources: {
       compute: 80,
@@ -61,7 +61,7 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
   },
   {
     id: 'cn_lab',
-    name: 'Red Horizon Lab',
+    name: 'DeepCent',  // AI 2027-inspired: China's leading AI collective
     type: 'lab',
     resources: {
       compute: 75,

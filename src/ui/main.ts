@@ -2,6 +2,7 @@ import './styles.css';
 
 import { createInitialState } from '../core/state.js';
 import { resolveTurn } from '../core/engine.js';
+import { applyResourceDelta, applyScoreDelta, applyStatDelta, computeGlobalSafety } from '../core/stats.js';
 import { decideActions } from '../ai/decideActions.js';
 import {
   applyNarrativeEffects,
@@ -9,10 +10,13 @@ import {
   resolveNarrativeEffects,
   type NarrativeDirective,
 } from '../ai/narrativeAI.js';
-import { mulberry32, round1 } from '../core/utils.js';
+import { mulberry32, round1, clamp } from '../core/utils.js';
 import { ActionChoice, GameState, TechNode, BranchId } from '../core/types.js';
 import { ACTIONS } from '../data/actions.js';
 import { TECH_TREE } from '../data/techTree.js';
+import { EVENTS, selectEvent, type EventDefinition, type EventChoice, type EventEffect } from '../data/events.js';
+import { pickEventChoice } from '../ai/eventAI.js';
+import { generateDialogue, type DialogueLine } from '../ai/dialogueAI.js';
 
 // Import new UI components
 import {
@@ -38,6 +42,8 @@ const startOptions = document.getElementById('startOptions');
 const startGameButton = document.getElementById('startGame');
 const headerElement = document.querySelector('header.topbar') as HTMLElement | null;
 const ordersContainer = document.querySelector('.orders') as HTMLElement | null;
+const eventPanel = document.getElementById('eventPanel');
+const commsLog = document.getElementById('commsLog');
 
 let seed = 21;
 let rng = mulberry32(seed);
@@ -48,6 +54,11 @@ let activeOrderIndex = 0;
 let activeBranch: 'all' | TechNode['branch'] = 'all';
 let selectedTechId: string | null = null;
 let techSearchTerm = '';
+let pendingEvent: EventDefinition | null = null;
+let pendingEventChoices = new Map<string, string>();
+let eventHistory: string[] = [];
+let commsFeed: DialogueLine[] = [];
+const autoStart = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('autostart') === '1';
 
 // Store player orders as ActionChoice[] for the new component system
 let playerOrders: ActionChoice[] = [
@@ -141,6 +152,71 @@ const getActionForBranch = (branch: TechNode['branch'], factionId: string): stri
   return 'policy';
 };
 
+const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
+  for (const effect of effects) {
+    switch (effect.kind) {
+      case 'resource': {
+        const targets =
+          effect.target === 'faction'
+            ? [factionId]
+            : effect.target === 'all_labs'
+              ? Object.values(state.factions).filter((faction) => faction.type === 'lab').map((f) => f.id)
+              : Object.keys(state.factions);
+        for (const id of targets) {
+          const faction = state.factions[id];
+          if (!faction) continue;
+          applyResourceDelta(faction, { [effect.key]: effect.delta });
+        }
+        break;
+      }
+      case 'score': {
+        const targets =
+          effect.target === 'faction'
+            ? [factionId]
+            : effect.target === 'all_labs'
+              ? Object.values(state.factions).filter((faction) => faction.type === 'lab').map((f) => f.id)
+              : Object.keys(state.factions);
+        for (const id of targets) {
+          const faction = state.factions[id];
+          if (!faction) continue;
+          applyScoreDelta(faction, effect.key, effect.delta);
+        }
+        break;
+      }
+      case 'stat': {
+        const targets =
+          effect.target === 'faction'
+            ? [factionId]
+            : effect.target === 'all_labs'
+              ? Object.values(state.factions).filter((faction) => faction.type === 'lab').map((f) => f.id)
+              : Object.keys(state.factions);
+        for (const id of targets) {
+          const faction = state.factions[id];
+          if (!faction) continue;
+          applyStatDelta(faction, effect.key, effect.delta);
+        }
+        break;
+      }
+      case 'research': {
+        const faction = state.factions[factionId];
+        if (!faction) break;
+        faction.research[effect.branch] = clamp(
+          faction.research[effect.branch] + effect.delta,
+          0,
+          100,
+        );
+        break;
+      }
+      case 'globalSafety': {
+        state.globalSafety = clamp(state.globalSafety + effect.delta, 0, 100);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+};
+
 const renderTechScreen = (): void => {
   if (!techContainer) return;
   const faction = state.factions[playerFactionId];
@@ -197,6 +273,52 @@ const renderLog = (state: GameState): void => {
     recentActions.appendChild(li);
   }
   state.log.length = 0;
+};
+
+const renderEventPanel = (): void => {
+  if (!eventPanel) return;
+  if (!pendingEvent) {
+    eventPanel.innerHTML = '<div class="event-panel__empty">No active events.</div>';
+    return;
+  }
+
+  const choicesHtml = pendingEvent.choices
+    .map(
+      (choice) => `
+      <button class="event-panel__choice" data-event-choice="${choice.id}">
+        <div class="event-panel__choice-title">${choice.label}</div>
+        <div class="event-panel__choice-desc">${choice.description}</div>
+      </button>
+    `,
+    )
+    .join('');
+
+  eventPanel.innerHTML = `
+    <div class="event-panel__title">${pendingEvent.title}</div>
+    <div class="event-panel__desc">${pendingEvent.description}</div>
+    <div class="event-panel__choices">${choicesHtml}</div>
+  `;
+
+  const choiceButtons = eventPanel.querySelectorAll<HTMLButtonElement>('[data-event-choice]');
+  for (const button of choiceButtons) {
+    button.onclick = () => {
+      const choiceId = button.dataset.eventChoice;
+      if (!choiceId || !pendingEvent) return;
+      resolveEventChoice(choiceId);
+    };
+  }
+};
+
+const renderCommsPanel = (): void => {
+  if (!commsLog) return;
+  commsLog.innerHTML = '';
+  const recent = commsFeed.slice(-8).reverse();
+  for (const line of recent) {
+    const li = document.createElement('li');
+    li.className = 'comms-line';
+    li.innerHTML = `<strong>${line.speaker}:</strong> ${line.text}`;
+    commsLog.appendChild(li);
+  }
 };
 
 const renderFocusCard = (state: GameState): void => {
@@ -350,6 +472,8 @@ const render = (state: GameState): void => {
   renderTechScreen();
   renderLog(state);
   renderFocusCard(state);
+  renderEventPanel();
+  renderCommsPanel();
 };
 
 // Read player orders from the state (maintained by the OrdersPanel component)
@@ -380,10 +504,56 @@ const collectNarrativeDirectives = async (): Promise<NarrativeDirective[]> => {
   return directives;
 };
 
+const resolveEventChoice = (choiceId: string): void => {
+  if (!pendingEvent) return;
+  const choice = pendingEvent.choices.find((item) => item.id === choiceId);
+  if (!choice) return;
+
+  applyEventEffects(choice.effects, playerFactionId);
+  state.log.push(`${state.factions[playerFactionId]?.name ?? 'Player'} chose: ${choice.label}`);
+
+  for (const [factionId, aiChoiceId] of pendingEventChoices.entries()) {
+    const aiChoice = pendingEvent.choices.find((item) => item.id === aiChoiceId) ?? pendingEvent.choices[0];
+    applyEventEffects(aiChoice.effects, factionId);
+    state.log.push(`${state.factions[factionId]?.name ?? factionId} chose: ${aiChoice.label}`);
+  }
+
+  pendingEvent = null;
+  pendingEventChoices.clear();
+  state.globalSafety = computeGlobalSafety(state);
+  renderEventPanel();
+  render(state);
+};
+
+const triggerEvent = async (): Promise<void> => {
+  if (pendingEvent) return;
+  const event = selectEvent(state, rng, eventHistory);
+  if (!event) return;
+  pendingEvent = event;
+  eventHistory.push(event.id);
+  pendingEventChoices = new Map();
+
+  const aiFactions = Object.keys(state.factions).filter((id) => id !== playerFactionId);
+  const choices = await Promise.all(
+    aiFactions.map(async (id) => ({
+      factionId: id,
+      choiceId: await pickEventChoice(state, id, event),
+    })),
+  );
+  for (const choice of choices) {
+    pendingEventChoices.set(choice.factionId, choice.choiceId);
+  }
+  renderEventPanel();
+};
+
 let isAdvancing = false;
 
 const advance = async (): Promise<void> => {
   if (state.gameOver) return;
+  if (pendingEvent) {
+    renderEventPanel();
+    return;
+  }
   if (isAdvancing) return;
   isAdvancing = true;
   try {
@@ -414,6 +584,15 @@ const advance = async (): Promise<void> => {
       }
     }
 
+    if (!state.gameOver) {
+      await triggerEvent();
+    }
+
+    if (directives.length) {
+      const lines = await generateDialogue(state, directives);
+      commsFeed = [...commsFeed, ...lines].slice(-40);
+    }
+
     if (narrativeDirective) {
       narrativeDirective = '';
       renderOrdersSection();
@@ -440,6 +619,10 @@ const reset = (): void => {
   ];
   // Reset narrative directive
   narrativeDirective = '';
+  pendingEvent = null;
+  pendingEventChoices.clear();
+  eventHistory = [];
+  commsFeed = [];
   // Destroy and recreate tech tree controller on reset
   if (techTreeController) {
     techTreeController.destroy();
@@ -478,6 +661,14 @@ const bindFocusHandlers = () => {
 
 const renderStartOverlay = () => {
   if (!startOverlay || !startOptions || !startGameButton) return;
+  if (autoStart) {
+    startOverlay.classList.add('is-hidden');
+    const playerSelect = ordersContainer?.querySelector('#playerFaction') as HTMLSelectElement | null;
+    if (playerSelect) playerSelect.disabled = true;
+    renderOrdersSection();
+    renderTechScreen();
+    return;
+  }
   startOptions.innerHTML = '';
   const factions = Object.values(state.factions);
   for (const faction of factions) {
@@ -525,6 +716,8 @@ const renderGameToText = (): string => {
     selectedTechId,
     globalSafety: round1(state.globalSafety),
     narrativeDirective: narrativeDirective || null,
+    pendingEvent: pendingEvent ? { id: pendingEvent.id, title: pendingEvent.title } : null,
+    commsCount: commsFeed.length,
     coordSystem: 'origin top-left, +x right, +y down',
     factions: Object.values(state.factions).map((faction) => ({
       id: faction.id,

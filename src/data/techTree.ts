@@ -1,10 +1,10 @@
 import { TechNode } from '../core/types.js';
 
 export const TECH_TREE: TechNode[] = [
-  // Capabilities
+  // Capabilities - AI 2027-inspired progression
   {
     id: 'cap_eff_training',
-    name: 'Efficient Training',
+    name: 'Unreliable Agent',  // AI 2027: first agent phase
     branch: 'capabilities',
     cost: 20,
     prereqs: [],
@@ -12,7 +12,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'cap_arch_breakthrough',
-    name: 'Architecture Breakthrough',
+    name: 'Coding Automation',  // AI 2027: agents that code
     branch: 'capabilities',
     cost: 25,
     prereqs: ['cap_eff_training'],
@@ -20,7 +20,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'cap_multimodal',
-    name: 'Multi-modal Mastery',
+    name: 'Reliable Agent',  // AI 2027: improved agent phase
     branch: 'capabilities',
     cost: 30,
     prereqs: ['cap_arch_breakthrough'],
@@ -28,7 +28,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'cap_long_horizon',
-    name: 'Long-Horizon Planning',
+    name: 'AI R&D Automation',  // AI 2027: AI doing AI research
     branch: 'capabilities',
     cost: 35,
     prereqs: ['cap_multimodal'],
@@ -36,7 +36,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'cap_scalable_reasoning',
-    name: 'Scalable Reasoning',
+    name: 'Agent Swarms',  // AI 2027: thousands of agent copies
     branch: 'capabilities',
     cost: 40,
     prereqs: ['cap_long_horizon'],
@@ -44,17 +44,17 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'cap_agi_breakthrough',
-    name: 'AGI Breakthrough',
+    name: 'Superintelligence',  // AI 2027: the endgame
     branch: 'capabilities',
     cost: 50,
     prereqs: ['cap_scalable_reasoning'],
     effects: [{ kind: 'capability', delta: 12 }, { kind: 'unlockAgi' }],
   },
 
-  // Safety
+  // Safety - AI 2027-inspired alignment tech
   {
     id: 'safe_alignment_benchmarks',
-    name: 'Alignment Benchmarks',
+    name: 'Model Specification',  // AI 2027: the "Spec" document
     branch: 'safety',
     cost: 18,
     prereqs: [],
@@ -62,7 +62,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'safe_interpretability',
-    name: 'Interpretability Tools',
+    name: 'Mechanistic Interp',  // AI 2027: reading the model's mind
     branch: 'safety',
     cost: 22,
     prereqs: ['safe_alignment_benchmarks'],
@@ -70,7 +70,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'safe_adversarial',
-    name: 'Adversarial Robustness',
+    name: 'Deception Detection',  // AI 2027: catching sycophantic behavior
     branch: 'safety',
     cost: 26,
     prereqs: ['safe_interpretability'],
@@ -78,7 +78,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'safe_monitoring',
-    name: 'Model Monitoring',
+    name: 'Chain-of-Thought Audit',  // AI 2027: monitoring agent reasoning
     branch: 'safety',
     cost: 30,
     prereqs: ['safe_adversarial'],
@@ -86,7 +86,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'safe_scaling_laws',
-    name: 'Safety Scaling Laws',
+    name: 'Alignment Tax Reduction',  // AI 2027: safety without capability loss
     branch: 'safety',
     cost: 34,
     prereqs: ['safe_monitoring'],
@@ -94,17 +94,17 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'safe_guardrails',
-    name: 'Deployment Guardrails',
+    name: 'Corrigibility Lock',  // AI 2027: maintaining human control
     branch: 'safety',
     cost: 40,
     prereqs: ['safe_scaling_laws'],
     effects: [{ kind: 'safety', delta: 12 }],
   },
 
-  // Ops / Infrastructure
+  // Ops / Infrastructure - AI 2027-inspired
   {
     id: 'ops_compute_scaling',
-    name: 'Compute Scaling',
+    name: 'Mega-Datacenter',  // AI 2027: massive compute clusters
     branch: 'ops',
     cost: 16,
     prereqs: [],
@@ -112,7 +112,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'ops_energy_contracts',
-    name: 'Energy Contracts',
+    name: 'Nuclear Power Deal',  // AI 2027: Tianwan-style power plants
     branch: 'ops',
     cost: 20,
     prereqs: ['ops_compute_scaling'],
@@ -120,7 +120,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'ops_data_pipeline',
-    name: 'Data Pipeline Optimization',
+    name: 'Synthetic Data Engine',  // AI 2027: AI-generated training data
     branch: 'ops',
     cost: 22,
     prereqs: ['ops_energy_contracts'],
@@ -128,7 +128,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'ops_ai_ops',
-    name: 'AI Ops Automation',
+    name: 'Weight Security (SL3)',  // AI 2027: security levels for model weights
     branch: 'ops',
     cost: 26,
     prereqs: ['ops_data_pipeline'],
@@ -136,7 +136,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'ops_model_compression',
-    name: 'Model Compression',
+    name: '10^28 FLOP Training',  // AI 2027: massive compute scaling
     branch: 'ops',
     cost: 30,
     prereqs: ['ops_ai_ops'],
@@ -144,17 +144,17 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'ops_reliability',
-    name: 'Deployment Reliability',
+    name: 'Agent Orchestration',  // AI 2027: managing thousands of agent copies
     branch: 'ops',
     cost: 34,
     prereqs: ['ops_model_compression'],
     effects: [{ kind: 'resource', key: 'trust', delta: 6 }],
   },
 
-  // Policy / Diplomacy
+  // Policy / Diplomacy - AI 2027-inspired
   {
     id: 'pol_audit_standards',
-    name: 'Audit Standards',
+    name: 'Frontier Model Forum',  // AI 2027: industry coordination
     branch: 'policy',
     cost: 16,
     prereqs: [],
@@ -162,7 +162,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'pol_compute_reporting',
-    name: 'Compute Reporting',
+    name: 'FLOP Threshold Treaty',  // AI 2027: compute governance
     branch: 'policy',
     cost: 20,
     prereqs: ['pol_audit_standards'],
@@ -170,7 +170,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'pol_joint_safety_lab',
-    name: 'Joint Safety Lab',
+    name: 'AISI Partnership',  // AI 2027: government safety institutes
     branch: 'policy',
     cost: 24,
     prereqs: ['pol_compute_reporting'],
@@ -178,7 +178,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'pol_non_prolif',
-    name: 'Non-Proliferation Treaty',
+    name: 'Chip Export Ban',  // AI 2027: hardware controls
     branch: 'policy',
     cost: 28,
     prereqs: ['pol_joint_safety_lab'],
@@ -186,7 +186,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'pol_export_controls',
-    name: 'Export Controls',
+    name: 'Taiwan Accord',  // AI 2027: semiconductor geopolitics
     branch: 'policy',
     cost: 30,
     prereqs: ['pol_non_prolif'],
@@ -194,7 +194,7 @@ export const TECH_TREE: TechNode[] = [
   },
   {
     id: 'pol_mutual_inspection',
-    name: 'Mutual Inspection',
+    name: 'AI Arms Control',  // AI 2027: international oversight
     branch: 'policy',
     cost: 34,
     prereqs: ['pol_export_controls'],
