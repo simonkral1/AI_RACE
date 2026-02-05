@@ -4,27 +4,34 @@ import { createInitialState } from '../core/state.js';
 import { resolveTurn } from '../core/engine.js';
 import { decideActions } from '../ai/decideActions.js';
 import { mulberry32, round1 } from '../core/utils.js';
-import { GameState, TechNode } from '../core/types.js';
+import { ActionChoice, GameState, TechNode, BranchId } from '../core/types.js';
 import { ACTIONS } from '../data/actions.js';
 import { TECH_TREE } from '../data/techTree.js';
 
-const turnLabel = document.getElementById('turnLabel');
-const globalSafety = document.getElementById('globalSafety');
-const tension = document.getElementById('tension');
+// Import new UI components
+import {
+  renderFactionList,
+  renderTechTree,
+  renderOrdersPanel,
+  renderGlobalDashboard,
+  renderStrategyQuestion,
+  needsTarget as componentNeedsTarget,
+  type TechTreeCallbacks,
+  type TechTreeState,
+  type ActionTarget,
+  type StrategyQuestionOptions,
+} from './components/index.js';
+
+// DOM element references
 const factionList = document.getElementById('factionList');
 const recentActions = document.getElementById('recentActions');
-const agiClock = document.getElementById('agiClock');
-const nextTurnBtn = document.getElementById('nextTurn');
-const resetBtn = document.getElementById('reset');
-const gameCanvas = document.getElementById('gameCanvas') as HTMLCanvasElement | null;
-const playerFactionSelect = document.getElementById('playerFaction') as HTMLSelectElement | null;
-const orderRows = Array.from(document.querySelectorAll<HTMLDivElement>('.orders__row'));
-const techTree = document.getElementById('techTree');
-const techTreeMeta = document.getElementById('techTreeMeta');
+const techContainer = document.querySelector('.panel--tech .tech-screen') as HTMLElement | null;
 const focusCard = document.getElementById('focusCard');
 const startOverlay = document.getElementById('startOverlay');
 const startOptions = document.getElementById('startOptions');
 const startGameButton = document.getElementById('startGame');
+const headerElement = document.querySelector('header.topbar') as HTMLElement | null;
+const ordersContainer = document.querySelector('.orders') as HTMLElement | null;
 
 let seed = 21;
 let rng = mulberry32(seed);
@@ -32,22 +39,30 @@ let state: GameState = createInitialState();
 let playerFactionId = 'us_lab_a';
 let focusFactionId = 'us_lab_a';
 let activeOrderIndex = 0;
+let activeBranch: 'all' | TechNode['branch'] = 'all';
+let selectedTechId: string | null = null;
+let techSearchTerm = '';
 
-const BOARD_NODES = [
-  { id: 'us_lab_a', label: 'Orion', x: 200, y: 210 },
-  { id: 'us_lab_b', label: 'Apex', x: 270, y: 300 },
-  { id: 'us_gov', label: 'US Exec', x: 140, y: 320 },
-  { id: 'cn_lab', label: 'Red Horizon', x: 660, y: 230 },
-  { id: 'cn_gov', label: 'PRC Exec', x: 740, y: 300 },
+// Store player orders as ActionChoice[] for the new component system
+let playerOrders: ActionChoice[] = [
+  { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
+  { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
 ];
 
-const formatQuarter = (year: number, quarter: number): string => `${year} Q${quarter}`;
+// Store player's natural language strategy answer
+let strategyAnswer = '';
 
-const getSafetyBand = (safety: number): 'low' | 'mid' | 'high' => {
-  if (safety < 40) return 'low';
-  if (safety < 70) return 'mid';
-  return 'high';
-};
+// Tech tree controller reference
+let techTreeController: {
+  update: (faction: any, state: Partial<TechTreeState>) => void;
+  getState: () => TechTreeState;
+  destroy: () => void;
+} | null = null;
+
+// TECH_BY_ID is now internal to the TechTree component
+
+// Unused but kept for potential future use
+// const formatQuarter = (year: number, quarter: number): string => `${year} Q${quarter}`;
 
 const getTension = (state: GameState): string => {
   const capability = Object.values(state.factions).reduce((sum, f) => sum + f.capabilityScore, 0);
@@ -67,28 +82,20 @@ const getAgiClock = (state: GameState): string => {
 
 const renderFactions = (state: GameState): void => {
   if (!factionList) return;
-  factionList.innerHTML = '';
-  for (const faction of Object.values(state.factions)) {
-    const card = document.createElement('div');
-    card.className = 'faction-card';
-    if (faction.id === focusFactionId) card.classList.add('is-focused');
-    card.dataset.faction = faction.id;
 
-    card.innerHTML = `
-      <div class="faction-card__header">
-        <div class="faction-card__title">${faction.name}</div>
-        <div class="faction-card__tag">${faction.type.toUpperCase()}</div>
-      </div>
-      <div class="stat-row">
-        ${renderStat('Capability', faction.capabilityScore, 'stat__fill', canSeeExact(faction.id))}
-        ${renderStat('Safety', faction.safetyScore, 'stat__fill--safety', canSeeExact(faction.id))}
-        ${renderStat('Trust', faction.resources.trust, 'stat__fill--trust', true)}
-        ${renderStat('Compute', faction.resources.compute, 'stat__fill', canSeeExact(faction.id))}
-      </div>
-    `;
+  // Use the new FactionCard component system
+  const factions = Object.values(state.factions);
+  const factionListElement = renderFactionList(
+    factions,
+    playerFactionId,
+    focusFactionId,
+    (id: string) => {
+      focusFactionId = id;
+      render(state);
+    }
+  );
 
-    factionList.appendChild(card);
-  }
+  factionList.replaceChildren(factionListElement);
 };
 
 const bandFor = (value: number) => {
@@ -99,120 +106,78 @@ const bandFor = (value: number) => {
 
 const canSeeExact = (factionId: string): boolean => factionId === playerFactionId;
 
-const renderStat = (label: string, value: number, fillClass = '', reveal = true): string => {
-  const clamped = Math.max(0, Math.min(100, value));
-  const band = bandFor(clamped);
-  const displayValue = reveal ? round1(clamped).toString() : band.label;
-  const displayWidth = reveal ? clamped : band.pct;
-  return `
-    <div class="stat">
-      <span>${label}</span>
-      <div class="stat__bar"><div class="stat__fill ${fillClass}" style="width: ${displayWidth}%"></div></div>
-      <span class="stat__value">${displayValue}</span>
-    </div>
-  `;
+// Helper functions - some are now handled by components but kept for focus card and other uses
+
+// renderStat is now handled by FactionCard component
+
+// branchLabel is now handled by TechTree component
+
+// getNodeStatus is now handled by TechTree component
+
+// updateTargetStateForRow is now handled by OrdersPanel component
+
+// effectLabel is now handled by TechTree component
+
+// getTechDepth is now handled by TechTree component
+
+// collectPrereqs is now handled by TechTree component
+
+// getNextUnlockable is now handled by TechTree component
+
+// matchesSearch is now handled by TechTree component
+
+const getActionForBranch = (branch: TechNode['branch'], factionId: string): string => {
+  const faction = state.factions[factionId];
+  if (!faction) return 'policy';
+  if (branch === 'capabilities') return faction.type === 'lab' ? 'research_capabilities' : 'policy';
+  if (branch === 'safety') return 'research_safety';
+  if (branch === 'ops') return faction.type === 'lab' ? 'build_compute' : 'policy';
+  return 'policy';
 };
 
-const drawRoundedRect = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) => {
-  const r = Math.min(radius, width / 2, height / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + width - r, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-  ctx.lineTo(x + width, y + height - r);
-  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  ctx.lineTo(x + r, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-};
+const renderTechScreen = (): void => {
+  if (!techContainer) return;
+  const faction = state.factions[playerFactionId];
+  if (!faction) return;
 
-const renderBoard = (state: GameState): void => {
-  if (!gameCanvas) return;
-  const ctx = gameCanvas.getContext('2d');
-  if (!ctx) return;
+  // Define callbacks for the tech tree component
+  const callbacks: TechTreeCallbacks = {
+    onSelect: (node) => {
+      selectedTechId = node.id;
+    },
+    onResearch: (node) => {
+      // Set research focus - update the active order to target this branch
+      const actionId = getActionForBranch(node.branch, playerFactionId);
+      if (playerOrders[activeOrderIndex]) {
+        playerOrders[activeOrderIndex] = {
+          ...playerOrders[activeOrderIndex],
+          actionId,
+        };
+        renderOrdersSection();
+      }
+    },
+    onBranchFilter: (branch) => {
+      activeBranch = branch === null ? 'all' : branch;
+    },
+  };
 
-  const { width, height } = gameCanvas;
-  ctx.clearRect(0, 0, width, height);
+  const techTreeState: Partial<TechTreeState> = {
+    selectedNodeId: selectedTechId,
+    filteredBranch: activeBranch === 'all' ? null : activeBranch as BranchId,
+    searchQuery: techSearchTerm,
+  };
 
-  const ocean = ctx.createLinearGradient(0, 0, width, height);
-  ocean.addColorStop(0, '#0f1e1f');
-  ocean.addColorStop(1, '#122a2a');
-  ctx.fillStyle = ocean;
-  ctx.fillRect(0, 0, width, height);
-
-  const land = ctx.createLinearGradient(0, 0, width, 0);
-  land.addColorStop(0, '#2b3a2f');
-  land.addColorStop(1, '#3b4f3a');
-  ctx.fillStyle = land;
-  ctx.globalAlpha = 0.9;
-  ctx.beginPath();
-  ctx.moveTo(80, 140);
-  ctx.lineTo(330, 110);
-  ctx.lineTo(420, 180);
-  ctx.lineTo(360, 300);
-  ctx.lineTo(120, 320);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(520, 120);
-  ctx.lineTo(820, 150);
-  ctx.lineTo(860, 260);
-  ctx.lineTo(760, 360);
-  ctx.lineTo(560, 300);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 0.6;
-  ctx.beginPath();
-  ctx.moveTo(410, 330);
-  ctx.lineTo(510, 330);
-  ctx.lineTo(540, 400);
-  ctx.lineTo(460, 450);
-  ctx.lineTo(380, 410);
-  ctx.closePath();
-  ctx.fill();
-  ctx.globalAlpha = 1;
-
-  for (const node of BOARD_NODES) {
-    const faction = state.factions[node.id];
-    if (!faction) continue;
-    const reveal = canSeeExact(node.id);
-    const safetyBand = reveal ? getSafetyBand(faction.safetyScore) : 'mid';
-    const color =
-      safetyBand === 'low' ? '#e26d5a' : safetyBand === 'mid' ? '#f6c06a' : '#8ac06c';
-
-    ctx.save();
-    ctx.globalAlpha = reveal ? 1 : 0.65;
-    ctx.fillStyle = '#0c130f';
-    drawRoundedRect(ctx, node.x - 48, node.y - 26, 96, 44, 10);
-    ctx.fill();
-    ctx.strokeStyle = node.id === focusFactionId ? 'rgba(246, 192, 106, 0.7)' : 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = node.id === focusFactionId ? 2 : 1;
-    ctx.stroke();
-
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(node.x + 32, node.y - 12, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 12;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    ctx.fillStyle = '#e7efe7';
-    ctx.font = '12px \"Space Grotesk\", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(node.label.toUpperCase(), node.x, node.y);
-    ctx.restore();
+  // If we have an existing controller, update it; otherwise create new
+  if (techTreeController) {
+    techTreeController.update(faction, techTreeState);
+  } else {
+    techTreeController = renderTechTree(
+      techContainer,
+      TECH_TREE,
+      faction,
+      callbacks,
+      techTreeState
+    );
   }
 };
 
@@ -248,62 +213,9 @@ const renderFocusCard = (state: GameState): void => {
   `;
 };
 
-const groupByBranch = (nodes: TechNode[]): Record<string, TechNode[]> => {
-  const grouped: Record<string, TechNode[]> = {};
-  for (const node of nodes) {
-    if (!grouped[node.branch]) grouped[node.branch] = [];
-    grouped[node.branch].push(node);
-  }
-  return grouped;
-};
 
-const renderTechTree = (state: GameState): void => {
-  if (!techTree) return;
-  const faction = state.factions[playerFactionId];
-  if (!faction) return;
-  if (techTreeMeta) techTreeMeta.textContent = `Progress for ${faction.name}`;
-  techTree.innerHTML = '';
-
-  const grouped = groupByBranch(TECH_TREE);
-  const branches: Array<keyof typeof grouped> = ['capabilities', 'safety', 'ops', 'policy'];
-
-  for (const branch of branches) {
-    const nodes = grouped[branch] ?? [];
-    const container = document.createElement('div');
-    container.className = 'tech-branch';
-
-    const progressValue = faction.research[branch] ?? 0;
-    const progressPct = Math.min(100, (progressValue / 50) * 100);
-
-    container.innerHTML = `
-      <div class="tech-branch__title">${branch}</div>
-      <div class="tech-branch__progress">
-        <span>${Math.round(progressValue)} RP</span>
-        <div class="tech-progress__bar"><div class="tech-progress__fill" style="width: ${progressPct}%"></div></div>
-      </div>
-      <div class="tech-nodes"></div>
-    `;
-
-    const nodeList = container.querySelector('.tech-nodes') as HTMLDivElement;
-    for (const node of nodes) {
-      const unlocked = faction.unlockedTechs.has(node.id);
-      const prereqsMet = node.prereqs.every((id) => faction.unlockedTechs.has(id));
-      const status = unlocked ? 'unlocked' : prereqsMet ? 'available' : 'locked';
-      const row = document.createElement('div');
-      row.className = `tech-node tech-node--${status}`;
-      row.innerHTML = `
-        <div>${node.name}</div>
-        <div class="tech-node__status">${status}</div>
-      `;
-      nodeList.appendChild(row);
-    }
-
-    techTree.appendChild(container);
-  }
-};
-
-const needsTarget = (actionId: string): boolean =>
-  actionId === 'espionage' || actionId === 'subsidize' || actionId === 'regulate';
+// needsTarget is now exported from components, but we keep a local reference for compatibility
+const needsTarget = componentNeedsTarget;
 
 const getAllowedActions = (factionId: string) => {
   const faction = state.factions[factionId];
@@ -311,101 +223,150 @@ const getAllowedActions = (factionId: string) => {
   return ACTIONS.filter((action) => action.allowedFor.includes(faction.type));
 };
 
-const renderPlayerControls = (): void => {
-  if (!playerFactionSelect) return;
-  playerFactionSelect.innerHTML = '';
-  for (const faction of Object.values(state.factions)) {
-    const option = document.createElement('option');
-    option.value = faction.id;
-    option.textContent = faction.name;
-    if (faction.id === playerFactionId) option.selected = true;
-    playerFactionSelect.appendChild(option);
-  }
+// Render the orders section using the new OrdersPanel component
+const renderOrdersSection = (): void => {
+  if (!ordersContainer) return;
 
   const allowedActions = getAllowedActions(playerFactionId);
-  const targets = Object.values(state.factions).filter((f) => f.id !== playerFactionId);
+  const targets: ActionTarget[] = Object.values(state.factions)
+    .filter((f) => f.id !== playerFactionId)
+    .map((f) => ({ id: f.id, name: f.name }));
 
-  for (const row of orderRows) {
-    const actionSelect = row.querySelector<HTMLSelectElement>('.orders__action');
-    const targetSelect = row.querySelector<HTMLSelectElement>('.orders__target');
-    if (!actionSelect || !targetSelect) continue;
-    actionSelect.innerHTML = '';
-    for (const action of allowedActions) {
-      const option = document.createElement('option');
-      option.value = action.id;
-      option.textContent = action.name;
-      actionSelect.appendChild(option);
+  // Ensure player orders use valid actions for the current faction type
+  const validActionIds = new Set(allowedActions.map((a) => a.id));
+  playerOrders = playerOrders.map((order) => {
+    if (!validActionIds.has(order.actionId)) {
+      return { ...order, actionId: allowedActions[0]?.id || 'policy' };
     }
+    return order;
+  });
 
-    targetSelect.innerHTML = '';
-    const none = document.createElement('option');
-    none.value = '';
-    none.textContent = 'No target';
-    targetSelect.appendChild(none);
-    for (const target of targets) {
-      const option = document.createElement('option');
-      option.value = target.id;
-      option.textContent = target.name;
-      targetSelect.appendChild(option);
+  const ordersPanel = renderOrdersPanel(
+    allowedActions,
+    targets,
+    playerOrders,
+    (index, choice) => {
+      playerOrders[index] = choice;
+      renderOrdersSection();
+    },
+    activeOrderIndex,
+    (index) => {
+      activeOrderIndex = index;
+      renderOrdersSection();
     }
+  );
 
-    const updateTargetState = () => {
-      const selected = actionSelect.value;
-      const requires = needsTarget(selected);
-      targetSelect.disabled = !requires;
-      if (!requires) targetSelect.value = '';
-    };
+  // Render strategy question component
+  const playerFaction = state.factions[playerFactionId];
+  const strategyOptions: StrategyQuestionOptions = {
+    turn: (state.year - 2026) * 4 + state.quarter,
+    globalSafety: state.globalSafety,
+    tension: getTension(state),
+    factionType: playerFaction?.type || 'lab',
+  };
 
-    actionSelect.onchange = updateTargetState;
-    updateTargetState();
+  const strategyQuestion = renderStrategyQuestion(
+    strategyOptions,
+    strategyAnswer,
+    (answer) => {
+      strategyAnswer = answer;
+    }
+  );
+
+  // Clear and replace the orders section content
+  // Keep the "Play As" selector but replace the rows
+  const playAsLabel = ordersContainer.querySelector('.orders__label');
+  ordersContainer.innerHTML = '';
+
+  if (playAsLabel) {
+    ordersContainer.appendChild(playAsLabel);
   }
+  ordersContainer.appendChild(ordersPanel);
+  ordersContainer.appendChild(strategyQuestion);
+};
+
+const renderPlayerControls = (): void => {
+  // Update the player faction selector
+  const playerFactionSelect = ordersContainer?.querySelector('#playerFaction') as HTMLSelectElement | null;
+  if (playerFactionSelect) {
+    playerFactionSelect.innerHTML = '';
+    for (const faction of Object.values(state.factions)) {
+      const option = document.createElement('option');
+      option.value = faction.id;
+      option.textContent = faction.name;
+      if (faction.id === playerFactionId) option.selected = true;
+      playerFactionSelect.appendChild(option);
+    }
+  }
+
+  renderOrdersSection();
 };
 
 const setActiveOrderRow = (index: number) => {
-  activeOrderIndex = Math.max(0, Math.min(orderRows.length - 1, index));
-  orderRows.forEach((row, idx) => row.classList.toggle('is-active', idx === activeOrderIndex));
+  activeOrderIndex = Math.max(0, Math.min(playerOrders.length - 1, index));
+  renderOrdersSection();
+};
+
+// Render the global dashboard header using the new component
+const renderHeader = (state: GameState): void => {
+  if (!headerElement) return;
+
+  const dashboardState = {
+    globalSafety: state.globalSafety,
+    year: state.year,
+    quarter: state.quarter,
+    turn: (state.year - 2026) * 4 + state.quarter,
+    tension: getTension(state),
+    agiClock: getAgiClock(state),
+  };
+
+  const dashboard = renderGlobalDashboard(
+    dashboardState,
+    advance,
+    reset,
+    {
+      safetyThreshold: 60,
+      startYear: 2026,
+      endYear: 2033,
+    }
+  );
+
+  headerElement.replaceChildren(dashboard);
 };
 
 const render = (state: GameState): void => {
-  if (turnLabel) turnLabel.textContent = formatQuarter(state.year, state.quarter);
-  if (globalSafety) globalSafety.textContent = String(round1(state.globalSafety));
-  if (tension) tension.textContent = getTension(state);
-  if (agiClock) agiClock.textContent = getAgiClock(state);
+  renderHeader(state);
   renderFactions(state);
-  renderBoard(state);
+  renderTechScreen();
   renderLog(state);
-  renderTechTree(state);
   renderFocusCard(state);
 };
 
-const readPlayerOrders = (): ReturnType<typeof decideActions> => {
-  const orders: ReturnType<typeof decideActions> = [];
-  for (const row of orderRows) {
-    const actionSelect = row.querySelector<HTMLSelectElement>('.orders__action');
-    const opennessSelect = row.querySelector<HTMLSelectElement>('.orders__openness');
-    const targetSelect = row.querySelector<HTMLSelectElement>('.orders__target');
-    if (!actionSelect || !opennessSelect) continue;
-    const actionId = actionSelect.value;
-    if (!actionId) continue;
-    const openness = opennessSelect.value === 'secret' ? 'secret' : 'open';
-    const targetFactionId = targetSelect?.value || undefined;
-    orders.push({ actionId, openness, targetFactionId: targetFactionId || undefined });
-  }
-  return orders;
+// Read player orders from the state (maintained by the OrdersPanel component)
+const readPlayerOrders = (): ActionChoice[] => {
+  return [...playerOrders];
 };
 
-const advance = (): void => {
+let isAdvancing = false;
+
+const advance = async (): Promise<void> => {
   if (state.gameOver) return;
-  const choices: Record<string, ReturnType<typeof decideActions>> = {};
-  for (const factionId of Object.keys(state.factions)) {
-    if (factionId === playerFactionId) {
-      choices[factionId] = readPlayerOrders();
-    } else {
-      choices[factionId] = decideActions(state, factionId, rng);
+  if (isAdvancing) return;
+  isAdvancing = true;
+  try {
+    const choices: Record<string, ActionChoice[]> = {};
+    for (const factionId of Object.keys(state.factions)) {
+      if (factionId === playerFactionId) {
+        choices[factionId] = readPlayerOrders();
+      } else {
+        choices[factionId] = await decideActions(state, factionId, rng);
+      }
     }
+    resolveTurn(state, choices, rng);
+    render(state);
+  } finally {
+    isAdvancing = false;
   }
-  resolveTurn(state, choices, rng);
-  render(state);
 };
 
 const reset = (): void => {
@@ -415,62 +376,49 @@ const reset = (): void => {
   playerFactionId = 'us_lab_a';
   focusFactionId = playerFactionId;
   startOverlay?.classList.remove('is-hidden');
-  if (playerFactionSelect) playerFactionSelect.disabled = false;
-  setActiveOrderRow(0);
+  techSearchTerm = '';
+  selectedTechId = null;
+  // Reset player orders to defaults
+  playerOrders = [
+    { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
+    { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
+  ];
+  // Reset strategy answer
+  strategyAnswer = '';
+  // Destroy and recreate tech tree controller on reset
+  if (techTreeController) {
+    techTreeController.destroy();
+    techTreeController = null;
+  }
+  activeOrderIndex = 0;
   renderPlayerControls();
   renderStartOverlay();
   render(state);
 };
 
-playerFactionSelect?.addEventListener('change', (event) => {
-  const value = (event.target as HTMLSelectElement).value;
-  playerFactionId = value || playerFactionId;
-  focusFactionId = playerFactionId;
-  renderPlayerControls();
-  render(state);
-});
+// Bind player faction selector change handler
+const bindPlayerFactionHandler = () => {
+  // Use event delegation on the orders container since the select may be recreated
+  ordersContainer?.addEventListener('change', (event) => {
+    const target = event.target as HTMLElement;
+    if (target.id === 'playerFaction') {
+      const value = (target as HTMLSelectElement).value;
+      playerFactionId = value || playerFactionId;
+      focusFactionId = playerFactionId;
+      // Destroy tech tree controller so it recreates for new faction
+      if (techTreeController) {
+        techTreeController.destroy();
+        techTreeController = null;
+      }
+      renderPlayerControls();
+      render(state);
+    }
+  });
+};
 
 const bindFocusHandlers = () => {
-  factionList?.addEventListener('click', (event) => {
-    const target = (event.target as HTMLElement).closest('.faction-card') as HTMLElement | null;
-    const id = target?.dataset.faction;
-    if (!id) return;
-    focusFactionId = id;
-    render(state);
-  });
-
-  gameCanvas?.addEventListener('click', (event) => {
-    if (!gameCanvas) return;
-    const rect = gameCanvas.getBoundingClientRect();
-    const scaleX = gameCanvas.width / rect.width;
-    const scaleY = gameCanvas.height / rect.height;
-    const x = (event.clientX - rect.left) * scaleX;
-    const y = (event.clientY - rect.top) * scaleY;
-
-    const hit = BOARD_NODES.find((node) => {
-      const dx = x - node.x;
-      const dy = y - node.y;
-      return Math.hypot(dx, dy) < 28;
-    });
-
-    if (!hit) return;
-    focusFactionId = hit.id;
-
-    if (hit.id !== playerFactionId) {
-      const row = orderRows[activeOrderIndex];
-      const actionSelect = row?.querySelector<HTMLSelectElement>('.orders__action');
-      const targetSelect = row?.querySelector<HTMLSelectElement>('.orders__target');
-      if (actionSelect && targetSelect && needsTarget(actionSelect.value)) {
-        targetSelect.disabled = false;
-        targetSelect.value = hit.id;
-      }
-    }
-    render(state);
-  });
-
-  orderRows.forEach((row, index) => {
-    row.addEventListener('click', () => setActiveOrderRow(index));
-  });
+  // Faction list click handlers are now handled by the FactionCard component callbacks
+  // The onFocusChange callback is passed to renderFactionList
 };
 
 const renderStartOverlay = () => {
@@ -493,6 +441,8 @@ const renderStartOverlay = () => {
 
   startGameButton.onclick = () => {
     startOverlay.classList.add('is-hidden');
+    // Disable the player faction selector after game starts
+    const playerFactionSelect = ordersContainer?.querySelector('#playerFaction') as HTMLSelectElement | null;
     if (playerFactionSelect) playerFactionSelect.disabled = true;
     setActiveOrderRow(0);
     renderPlayerControls();
@@ -500,13 +450,13 @@ const renderStartOverlay = () => {
   };
 };
 
-nextTurnBtn?.addEventListener('click', advance);
-resetBtn?.addEventListener('click', reset);
+// Event bindings are now handled by the GlobalDashboard component callbacks
+// and the OrdersPanel component callbacks
 
 bindFocusHandlers();
+bindPlayerFactionHandler();
 renderStartOverlay();
 renderPlayerControls();
-setActiveOrderRow(0);
 render(state);
 
 const renderGameToText = (): string => {
@@ -516,14 +466,11 @@ const renderGameToText = (): string => {
     quarter: state.quarter,
     playerFactionId,
     focusFactionId,
+    activeBranch,
+    selectedTechId,
     globalSafety: round1(state.globalSafety),
+    strategyAnswer: strategyAnswer || null,
     coordSystem: 'origin top-left, +x right, +y down',
-    boardNodes: BOARD_NODES.map((node) => ({
-      id: node.id,
-      x: node.x,
-      y: node.y,
-      label: node.label,
-    })),
     factions: Object.values(state.factions).map((faction) => ({
       id: faction.id,
       name: faction.name,

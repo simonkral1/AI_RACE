@@ -38,10 +38,29 @@
           <div id="factionList" class="faction-list"></div>
         </section>
 
-        <section class="panel panel--map">
-          <h2>World Board</h2>
-          <div class="map">
-            <canvas id="gameCanvas" width="900" height="520" aria-label="World board"></canvas>
+        <section class="panel panel--tech">
+          <h2>Technology Directorate</h2>
+          <div class="tech-screen">
+            <div class="tech-screen__header">
+              <div class="tech-screen__title">AI Technology Atlas</div>
+              <div class="tech-screen__meta" id="techScreenMeta">Player research view</div>
+            </div>
+            <div class="tech-screen__controls">
+              <div id="techTabs" class="tech-screen__tabs"></div>
+              <div class="tech-screen__filters">
+                <input id="techSearch" class="tech-screen__search" type="search" placeholder="Search tech..." />
+                <div class="tech-screen__legend">
+                  <span class="legend legend--unlocked">Unlocked</span>
+                  <span class="legend legend--available">Available</span>
+                  <span class="legend legend--locked">Locked</span>
+                </div>
+              </div>
+            </div>
+            <div id="techProgress" class="tech-screen__progress"></div>
+            <div class="tech-screen__content">
+              <div id="techBoard" class="tech-screen__board"></div>
+              <div id="techDetail" class="tech-screen__detail"></div>
+            </div>
           </div>
         </section>
 
@@ -54,6 +73,15 @@
                 <label class="orders__label">
                   <span>Play As</span>
                   <select id="playerFaction" class="orders__select"></select>
+                </label>
+                <label class="orders__label">
+                  <span>Narrative Directive</span>
+                  <textarea
+                    id="playerDirective"
+                    class="orders__textarea"
+                    placeholder="Example: Invest in safety research and build compute."
+                  ></textarea>
+                  <span class="orders__hint">One free-form directive per turn. The Game Master interprets it.</span>
                 </label>
                 <div class="orders__row" data-order-row="0">
                   <select class="orders__select orders__action"></select>
@@ -86,13 +114,6 @@
               <div class="intel-title">Recent Actions</div>
               <ul id="recentActions" class="log"></ul>
             </div>
-          </div>
-          <div class="tech-tree">
-            <div class="tech-tree__header">
-              <div class="intel-title">Tech Tree</div>
-              <div class="tech-tree__meta" id="techTreeMeta">Progress for player faction</div>
-            </div>
-            <div id="techTree" class="tech-tree__grid"></div>
           </div>
         </section>
       </main>
