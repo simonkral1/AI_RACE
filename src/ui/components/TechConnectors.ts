@@ -181,7 +181,7 @@ export function createTechConnectors(
 
       const color = isHighlighted
         ? opts.highlightColor
-        : opts.defaultColor;
+        : branchColor ?? opts.defaultColor;
       const strokeWidth = isHighlighted
         ? opts.highlightStrokeWidth
         : opts.strokeWidth;
