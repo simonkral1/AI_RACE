@@ -10,6 +10,12 @@ export interface FactionTemplate {
   capabilityScore: number;
   safetyScore: number;
   strategy: StrategyProfile;
+  /** Initial public opinion (0-100) */
+  publicOpinion?: number;
+  /** Initial security level (1-5) */
+  securityLevel?: number;
+  /** Faction's unique special ability action ID */
+  specialAbility?: string;
 }
 
 export const FACTION_TEMPLATES: FactionTemplate[] = [
@@ -29,6 +35,9 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     opsec: 55,
     capabilityScore: 10,
     safetyScore: 25,
+    publicOpinion: 65,
+    securityLevel: 3,
+    specialAbility: 'open_research',
     strategy: {
       riskTolerance: 35,
       safetyFocus: 75,
@@ -52,6 +61,9 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     opsec: 60,
     capabilityScore: 15,
     safetyScore: 20,
+    publicOpinion: 55,
+    securityLevel: 2,
+    specialAbility: 'move_fast',
     strategy: {
       riskTolerance: 55,
       safetyFocus: 45,
@@ -75,6 +87,9 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     opsec: 70,
     capabilityScore: 15,
     safetyScore: 15,
+    publicOpinion: 40,
+    securityLevel: 4,
+    specialAbility: 'state_resources',
     strategy: {
       riskTolerance: 65,
       safetyFocus: 35,
@@ -98,6 +113,9 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     opsec: 50,
     capabilityScore: 0,
     safetyScore: 35,
+    publicOpinion: 55,
+    securityLevel: 4,
+    specialAbility: 'executive_order',
     strategy: {
       riskTolerance: 30,
       safetyFocus: 65,
@@ -121,6 +139,9 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     opsec: 55,
     capabilityScore: 0,
     safetyScore: 30,
+    publicOpinion: 45,
+    securityLevel: 5,
+    specialAbility: 'strategic_initiative',
     strategy: {
       riskTolerance: 40,
       safetyFocus: 50,

@@ -1,5 +1,57 @@
 // Lightweight component utilities
 
+/**
+ * Create an HTML element with attributes
+ */
+export function createElement<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  options: Record<string, any> = {}
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tag);
+
+  for (const [key, value] of Object.entries(options)) {
+    if (key === 'className') {
+      element.className = value;
+    } else if (key === 'textContent') {
+      element.textContent = value;
+    } else if (key === 'innerHTML') {
+      element.innerHTML = value;
+    } else if (key === 'style' && typeof value === 'string') {
+      element.setAttribute('style', value);
+    } else if (key === 'onclick' && typeof value === 'function') {
+      element.addEventListener('click', value);
+    } else if (key === 'title') {
+      element.title = value;
+    } else if (key.startsWith('data-')) {
+      element.setAttribute(key, value);
+    }
+  }
+
+  return element;
+}
+
+/**
+ * Create an SVG element with attributes
+ */
+export function createSvgElement<K extends keyof SVGElementTagNameMap>(
+  tag: K,
+  options: Record<string, any> = {}
+): SVGElementTagNameMap[K] {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+
+  for (const [key, value] of Object.entries(options)) {
+    if (key === 'className') {
+      element.setAttribute('class', value);
+    } else if (key === 'textContent') {
+      element.textContent = value;
+    } else {
+      element.setAttribute(key, String(value));
+    }
+  }
+
+  return element;
+}
+
 export interface ElementOptions {
   className?: string;
   id?: string;

@@ -1,4 +1,11 @@
 import type { BranchId, GameState, ResourceKey } from '../core/types.js';
+import {
+  EXPANDED_EVENTS,
+  selectExpandedEvent,
+  type ExpandedEventDefinition,
+  type EventCategory,
+  type EventCondition,
+} from './eventsExpanded.js';
 
 export type EventEffect =
   | {
@@ -28,6 +35,11 @@ export type EventEffect =
   | {
       kind: 'globalSafety';
       delta: number;
+    }
+  | {
+      kind: 'exposure';
+      target: 'faction';
+      delta: number;
     };
 
 export type EventChoice = {
@@ -44,8 +56,14 @@ export type EventDefinition = {
   weight: number;
   minTurn?: number;
   maxTurn?: number;
+  category?: EventCategory;
+  cooldown?: number;
+  conditions?: EventCondition[];
   choices: EventChoice[];
 };
+
+// Re-export expanded event types and utilities
+export { EXPANDED_EVENTS, selectExpandedEvent, type ExpandedEventDefinition, type EventCategory, type EventCondition };
 
 export const EVENTS: EventDefinition[] = [
   {
@@ -236,6 +254,10 @@ export const EVENTS: EventDefinition[] = [
   },
 ];
 
+/**
+ * Legacy event selection - selects from EVENTS list
+ * @deprecated Use selectExpandedEvent for the full event system
+ */
 export const selectEvent = (
   state: GameState,
   rng: () => number,
@@ -257,4 +279,63 @@ export const selectEvent = (
     if (roll <= 0) return event;
   }
   return eligible[eligible.length - 1];
+};
+
+/**
+ * Enhanced event selection using the expanded event system
+ * Combines legacy events with the new expanded events for a richer experience
+ */
+export const selectSmartEvent = (
+  state: GameState,
+  factionId: string,
+  rng: () => number,
+  eventHistory: Array<{ eventId: string; turn: number }>,
+): EventDefinition | null => {
+  // Use the expanded event system with smarter selection logic
+  const expandedEvent = selectExpandedEvent(state, factionId, rng, eventHistory);
+
+  if (expandedEvent) {
+    // Convert ExpandedEventDefinition to EventDefinition for compatibility
+    return {
+      id: expandedEvent.id,
+      title: expandedEvent.title,
+      description: expandedEvent.description,
+      weight: expandedEvent.weight,
+      category: expandedEvent.category,
+      cooldown: expandedEvent.cooldown,
+      conditions: expandedEvent.conditions,
+      choices: expandedEvent.choices,
+    };
+  }
+
+  return null;
+};
+
+/**
+ * Get events filtered by category
+ */
+export const getEventsByCategory = (category: EventCategory): ExpandedEventDefinition[] => {
+  return EXPANDED_EVENTS.filter(event => event.category === category);
+};
+
+/**
+ * Get event statistics for the expanded event system
+ */
+export const getEventStats = () => {
+  const categories: Record<EventCategory, number> = {
+    capability: 0,
+    safety: 0,
+    geopolitical: 0,
+    economic: 0,
+    lab_drama: 0,
+  };
+
+  for (const event of EXPANDED_EVENTS) {
+    categories[event.category]++;
+  }
+
+  return {
+    total: EXPANDED_EVENTS.length,
+    byCategory: categories,
+  };
 };

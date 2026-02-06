@@ -25,6 +25,9 @@ export const createInitialState = (): GameState => {
         policy: 0,
       },
       canDeployAgi: false,
+      // New expanded resources - use template values or defaults
+      publicOpinion: template.publicOpinion ?? (template.type === 'government' ? 50 : template.resources.trust),
+      securityLevel: template.securityLevel ?? (template.type === 'government' ? 3 : 2),
     };
   }
 
@@ -36,6 +39,10 @@ export const createInitialState = (): GameState => {
     globalSafety: 0,
     gameOver: false,
     log: [],
+    // New faction relationship systems
+    alliances: new Map<string, string[]>(),
+    tensions: new Map<string, number>(),
+    treaties: [],
   };
 
   state.globalSafety = computeGlobalSafety(state);

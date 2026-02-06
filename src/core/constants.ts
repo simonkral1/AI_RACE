@@ -40,3 +40,12 @@ export const ESPIONAGE = {
 
 export const TURN_START_YEAR = 2026;
 export const TURN_START_QUARTER = 1;
+
+// Game ends at turn 32 (2033 Q4) - 8 years of quarters
+export const MAX_TURN = 32;
+
+// Government victory thresholds
+export const GOVERNMENT_VICTORY = {
+  allLabsSafeThreshold: 60, // All labs must have safetyScore >= this
+  globalSafetyThreshold: 55, // Global safety must be >= this
+};

@@ -36,6 +36,11 @@ export interface FactionState {
   unlockedTechs: Set<string>;
   research: Record<BranchId, number>;
   canDeployAgi: boolean;
+  // New expanded resources
+  /** Public opinion rating (0-100) */
+  publicOpinion: number;
+  /** Security level (1-5, like AI 2027) */
+  securityLevel: number;
 }
 
 export interface TechNode {
@@ -64,7 +69,23 @@ export type ActionKind =
   | 'espionage'
   | 'subsidize'
   | 'regulate'
-  | 'counterintel';
+  | 'counterintel'
+  // New expanded actions
+  | 'hire_talent'
+  | 'publish_research'
+  | 'form_alliance'
+  | 'secure_funding'
+  | 'hardware_partnership'
+  | 'open_source_release'
+  | 'defensive_measures'
+  | 'accelerate_timeline'
+  | 'safety_pause'
+  // Faction-specific abilities
+  | 'open_research'      // OpenBrain
+  | 'move_fast'          // Nexus Labs
+  | 'state_resources'    // DeepCent
+  | 'executive_order'    // US Gov
+  | 'strategic_initiative'; // CN Gov
 
 export interface ActionDefinition {
   id: string;
@@ -74,6 +95,15 @@ export interface ActionDefinition {
   baseResearch: Partial<Record<BranchId, number>>;
   baseResourceDelta: Partial<Record<ResourceKey, number>>;
   exposure: number;
+  /** If set, only this specific faction can use this action */
+  factionSpecific?: string;
+  /** Effects on capability and safety scores */
+  scoreEffects?: {
+    capabilityDelta?: number;
+    safetyDelta?: number;
+  };
+  /** Security level change (1-5 scale) */
+  securityLevelDelta?: number;
 }
 
 export interface ActionChoice {
@@ -97,6 +127,20 @@ export interface GameState {
   gameOver: boolean;
   winnerId?: string;
   log: string[];
+  // New faction relationship systems
+  /** Alliances between factions: factionId -> array of allied faction IDs */
+  alliances: Map<string, string[]>;
+  /** Tension levels between factions: "factionA:factionB" -> tension level (0-100) */
+  tensions: Map<string, number>;
+  /** Active treaties/agreements (treaty IDs) */
+  treaties: string[];
+  // Victory/loss tracking
+  /** Victory type if game ended with a victor */
+  victoryType?: string;
+  /** Loss type if game ended without a victor */
+  lossType?: string;
+  /** Faction that lost (if specific faction lost) */
+  loserId?: string;
 }
 
 export interface StrategyProfile {

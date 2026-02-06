@@ -32,9 +32,27 @@ Original prompt: "Let's try to make a plan for building a kind of video game... 
 - 2026-02-05: Hardened autonomous loop singleton behavior:
   - `scripts/autonomous_dev_loop.sh` now checks both `loop.pid` and `loop.lock` to prevent duplicate foreground/background runners.
   - `loop:dev:continuous` now exits immediately with a clear message when another loop is active.
+- 2026-02-05: Updated Codex Web agent prompt with npm wrapper commands and singleton note.
+- 2026-02-06: Added comprehensive victory condition tracking and UI:
+  - `src/core/victoryConditions.ts`: Multiple win/loss conditions for labs and governments
+    - Lab victories: Safe AGI, Dominant (80%+ capability lead), Public Trust (90+ trust)
+    - Government victories: Regulatory (all labs safe by turn 32), Alliance (3+ faction treaty), Control (nationalize labs)
+    - Loss conditions: Catastrophe (unsafe AGI), Obsolescence (50+ behind), Collapse (trust < 20), Coup (gov loses control)
+  - `src/ui/components/VictoryTracker.ts`: Collapsible panel showing progress toward each victory condition
+    - Progress bars for each condition
+    - Warning indicators when close to loss conditions
+    - Distance-to-victory calculations
+  - `src/ui/components/EndgameAnalysis.ts`: Detailed breakdown when game ends
+    - Final standings table
+    - Analysis of what went right/wrong
+    - Key turning points (optional)
+    - Statistics and achievements
+  - Updated `src/core/engine.ts` to check all victory/loss conditions each turn
+  - Updated `src/core/types.ts` with victoryType, lossType, loserId fields
+  - Added 26 new tests in `tests/victoryConditions.test.ts`
+  - All 261 tests passing
 - TODO: Add board interactions (node click sets target/order) and POV intel system.
 - TODO: Add event deck + modal choices.
 - TODO: Add proper canvas renderer + render_game_to_text + advanceTime for automated Playwright testing.
 - TODO: Add an integration test harness (Playwright smoke spec in repo) for startup mode transitions, legacy selectors, and event resolution.
 - TODO: Add deterministic event trigger hook for test mode (avoid one-turn-only assumptions in external scripts).
-- TODO: Add distinct government victory/score condition and post-game timeline summary panel.

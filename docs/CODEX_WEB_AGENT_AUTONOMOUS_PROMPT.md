@@ -52,6 +52,8 @@ Repeat this loop continuously:
 - Start detached: `bash scripts/start_autonomous_loop.sh`
 - Stop detached: `bash scripts/stop_autonomous_loop.sh`
 - Status: `bash scripts/autonomous_loop_status.sh`
+ - npm wrappers: `npm run loop:start`, `npm run loop:stop`, `npm run loop:status`
+ - Note: Do not start a second foreground loop while a detached loop is active; singleton checks will exit.
 
 ## Output Discipline
 At the end of each cycle, write:

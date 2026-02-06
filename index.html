@@ -37,6 +37,9 @@
         <div class="topbar__actions">
           <button id="nextTurn" class="btn">Advance Quarter</button>
           <button id="reset" class="btn btn--ghost">Reset</button>
+          <button id="themeToggle" class="btn btn--icon" onclick="window.toggleTheme?.()" title="Toggle theme (B)">
+            <span class="theme-icon">◐</span>
+          </button>
         </div>
       </header>
 
@@ -72,44 +75,34 @@
           </div>
         </section>
 
-        <section class="panel panel--intel">
-          <h2>Intel &amp; Decisions</h2>
-          <div class="intel-grid">
-            <div class="intel-card">
-              <div class="intel-title">Player Orders</div>
-              <div class="orders">
-                <label class="orders__label">
-                  <span>Play As</span>
-                  <select id="playerFaction" class="orders__select"></select>
-                </label>
-                <div class="orders__row" data-order-row="0">
-                  <select class="orders__select orders__action"></select>
-                  <select class="orders__select orders__openness">
-                    <option value="open">Open</option>
-                    <option value="secret">Secret</option>
-                  </select>
-                  <select class="orders__select orders__target"></select>
-                </div>
-                <div class="orders__row" data-order-row="1">
-                  <select class="orders__select orders__action"></select>
-                  <select class="orders__select orders__openness">
-                    <option value="open">Open</option>
-                    <option value="secret">Secret</option>
-                  </select>
-                  <select class="orders__select orders__target"></select>
-                </div>
-                <div class="orders__hint">Orders apply when you advance the quarter.</div>
-              </div>
+        <section class="panel panel--intel panel--wide">
+          <h2>Command Center</h2>
+
+          <!-- Main tab navigation -->
+          <div class="main-tabs" id="mainTabs">
+            <button class="main-tabs__tab is-active" data-tab="actions">Actions</button>
+            <button class="main-tabs__tab" data-tab="gamemaster">Gamemaster</button>
+            <button class="main-tabs__tab" data-tab="events">Events</button>
+            <button class="main-tabs__tab" data-tab="intel">Intel</button>
+          </div>
+
+          <!-- Tab content areas -->
+          <div class="main-screen is-active" id="screen-actions">
+            <div class="orders">
+              <label class="orders__label">
+                <span>Play As</span>
+                <select id="playerFaction" class="orders__select"></select>
+              </label>
+              <!-- Freeform actions will be rendered here -->
             </div>
-            <div class="intel-card">
-              <div class="intel-title">Focus Dossier</div>
-              <div id="focusCard" class="focus-card"></div>
-            </div>
-            <div class="intel-card">
-              <div class="intel-title">AGI Race Clock</div>
-              <div class="intel-body" id="agiClock">Early phase</div>
-            </div>
-            <div class="intel-card">
+          </div>
+
+          <div class="main-screen" id="screen-gamemaster">
+            <div id="gamemasterPanel" class="gamemaster-container"></div>
+          </div>
+
+          <div class="main-screen" id="screen-events">
+            <div class="intel-card intel-card--full">
               <div class="intel-title">Event Briefing</div>
               <div id="eventPanel" class="event-panel"></div>
             </div>
@@ -120,6 +113,23 @@
             <div class="intel-card">
               <div class="intel-title">Interlab Comms</div>
               <ul id="commsLog" class="log log--comms"></ul>
+            </div>
+          </div>
+
+          <div class="main-screen" id="screen-intel">
+            <div class="intel-grid intel-grid--compact">
+              <div class="intel-card">
+                <div class="intel-title">Focus Dossier</div>
+                <div id="focusCard" class="focus-card"></div>
+              </div>
+              <div class="intel-card intel-card--victory">
+                <div class="intel-title">Victory Conditions</div>
+                <div id="victoryTracker" class="victory-tracker-container"></div>
+              </div>
+              <div class="intel-card">
+                <div class="intel-title">AGI Race Clock</div>
+                <div class="intel-body" id="agiClock">Early phase</div>
+              </div>
             </div>
           </div>
         </section>

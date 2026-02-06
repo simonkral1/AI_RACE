@@ -1,0 +1,27 @@
+{
+  "tasks": [
+    {"id": 1, "type": "test", "file": "tests/state.test.ts", "priority": 1, "status": "completed"},
+    {"id": 2, "type": "test", "file": "tests/engine.test.ts", "priority": 1, "status": "completed"},
+    {"id": 3, "type": "test", "file": "tests/stats.test.ts", "priority": 2, "status": "completed"},
+    {"id": 4, "type": "test", "file": "tests/events.test.ts", "priority": 2, "status": "completed"},
+    {"id": 5, "type": "test", "file": "tests/actions.test.ts", "priority": 2, "status": "completed"},
+    {"id": 6, "type": "e2e", "file": "tests/e2e/game.spec.ts", "priority": 1, "status": "completed"},
+    {"id": 7, "type": "feature", "name": "save-load", "priority": 3, "status": "completed"},
+    {"id": 8, "type": "feature", "name": "government-victory", "priority": 3, "status": "completed"},
+    {"id": 9, "type": "feature", "name": "event-modal-enhance", "priority": 4, "status": "completed"},
+    {"id": 10, "type": "test", "file": "tests/ai/heuristic.test.ts", "priority": 3, "status": "completed"},
+    {"id": 11, "type": "e2e", "file": "tests/e2e/endgame.spec.ts", "priority": 4, "status": "completed"},
+    {"id": 12, "type": "feature", "name": "keyboard-shortcuts", "priority": 5, "status": "completed"},
+    {"id": 13, "type": "feature", "name": "sound-effects", "priority": 6, "status": "completed"},
+    {"id": 14, "type": "feature", "name": "tutorial-mode", "priority": 5, "status": "completed"},
+    {"id": 15, "type": "test", "file": "tests/persistence.test.ts", "priority": 3, "status": "completed"}
+  ],
+  "completed": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+  "meta": {
+    "created": "2025-02-06",
+    "last_updated": "2026-02-06T00:32:00Z",
+    "total_tasks": 15,
+    "completed_count": 15,
+    "pending_count": 0
+  }
+}

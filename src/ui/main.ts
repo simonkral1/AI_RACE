@@ -1,4 +1,5 @@
 import './styles.css';
+import './simple.css';
 
 import { createInitialState } from '../core/state.js';
 import { resolveTurn } from '../core/engine.js';
@@ -17,6 +18,27 @@ import { TECH_TREE } from '../data/techTree.js';
 import { EVENTS, selectEvent, type EventDefinition, type EventChoice, type EventEffect } from '../data/events.js';
 import { pickEventChoice } from '../ai/eventAI.js';
 import { generateDialogue, type DialogueLine } from '../ai/dialogueAI.js';
+import { saveToLocalStorage, loadFromLocalStorage, getSaveSlots } from '../core/persistence.js';
+import { startTutorial, resetTutorial, hasTutorialCompleted } from './tutorial.js';
+import { playAdvance, playEvent, playSave, playLoad, playVictory, playDefeat, toggleAudio, isAudioEnabled } from './audio.js';
+import { showSaveManager, autosave } from './saveManager.js';
+import { recordGameStart, recordGameEnd, showStatistics } from './statistics.js';
+import { cycleSpeed, getSpeedLabel } from './gameSpeed.js';
+import { renderSimpleTechTree } from './SimpleTechTree.js';
+import { renderSimpleActions } from './SimpleActions.js';
+import { renderFreeformActions } from './FreeformActions.js';
+import {
+  renderGamemasterPanel,
+  updateGamemasterPanel,
+  injectGamemasterStyles,
+  type ChatMessage,
+  type QuickActionType,
+} from './GamemasterPanel.js';
+import {
+  createGamemaster,
+  type Gamemaster,
+  type GameEvent,
+} from '../ai/gamemaster.js';
 
 // Import new UI components
 import {
@@ -25,11 +47,17 @@ import {
   renderOrdersPanel,
   renderGlobalDashboard,
   renderStrategyQuestion,
+  renderVictoryTracker,
+  renderVictorySummary,
+  renderEndgameAnalysis,
   needsTarget as componentNeedsTarget,
+  createTabbedTechTree,
   type TechTreeCallbacks,
   type TechTreeState,
+  type TabbedTechTreeState,
   type ActionTarget,
   type StrategyQuestionOptions,
+  type VictoryTrackerOptions,
 } from './components/index.js';
 
 // DOM element references
@@ -49,6 +77,11 @@ const headerElement = document.querySelector('header.topbar') as HTMLElement | n
 const ordersContainer = document.querySelector('.orders') as HTMLElement | null;
 const eventPanel = document.getElementById('eventPanel');
 const commsLog = document.getElementById('commsLog');
+const gamemasterContainer = document.getElementById('gamemasterPanel');
+const victoryTrackerContainer = document.getElementById('victoryTracker');
+
+// Victory tracker state
+let victoryTrackerCollapsed = false;
 
 let seed = 21;
 let rng = mulberry32(seed);
@@ -81,6 +114,23 @@ let techTreeController: {
   getState: () => TechTreeState;
   destroy: () => void;
 } | null = null;
+
+// Tabbed tech tree controller reference
+let tabbedTechTreeController: {
+  update: (faction: any, state: Partial<TabbedTechTreeState>) => void;
+  getState: () => TabbedTechTreeState;
+  destroy: () => void;
+} | null = null;
+
+// Gamemaster AI instance and state
+const gamemaster: Gamemaster = createGamemaster();
+let gamemasterChatHistory: ChatMessage[] = [];
+let gamemasterNarrative = '';
+let gamemasterLoading = false;
+let gamemasterPanelElement: HTMLElement | null = null;
+
+// Use tabbed view by default (can be toggled with URL param ?simple=1)
+const useSimpleTechTree = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('simple') === '1';
 
 // TECH_BY_ID is now internal to the TechTree component
 
@@ -224,49 +274,81 @@ const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
   }
 };
 
+// Research tech handler - shared between simple and tabbed views
+const handleTechResearch = (techId: string): void => {
+  const faction = state.factions[playerFactionId];
+  if (!faction) return;
+
+  // Find the tech and try to unlock it
+  const tech = TECH_TREE.find(t => t.id === techId);
+  if (!tech) return;
+
+  // Check if we can afford it
+  const branchProgress = faction.research[tech.branch] || 0;
+  const cost = Math.max(0, tech.cost - Math.floor(branchProgress / 10));
+
+  if (branchProgress >= cost * 10) {
+    // Unlock the tech
+    faction.unlockedTechs.add(techId);
+
+    // Apply effects
+    for (const effect of tech.effects) {
+      if (effect.kind === 'capability') {
+        faction.capabilityScore += effect.delta;
+      } else if (effect.kind === 'safety') {
+        faction.safetyScore += effect.delta;
+      } else if (effect.kind === 'resource' && 'key' in effect) {
+        (faction.resources as any)[effect.key] += effect.delta;
+      } else if (effect.kind === 'unlockAgi') {
+        faction.canDeployAgi = true;
+      }
+    }
+
+    // Deduct cost from branch progress
+    faction.research[tech.branch] = Math.max(0, branchProgress - cost * 10);
+
+    state.log.push(`${faction.name} unlocked ${tech.name}`);
+    render(state);
+  } else {
+    state.log.push(`Not enough ${tech.branch} research points (need ${cost * 10}, have ${branchProgress})`);
+    render(state);
+  }
+};
+
 const renderTechScreen = (): void => {
   if (!techContainer) return;
   const faction = state.factions[playerFactionId];
   if (!faction) return;
 
-  // Define callbacks for the tech tree component
-  const callbacks: TechTreeCallbacks = {
-    onSelect: (node) => {
-      selectedTechId = node.id;
-    },
-    onResearch: (node) => {
-      // Set research focus - update the active order to target this branch
-      const actionId = getActionForBranch(node.branch, playerFactionId);
-      if (playerOrders[activeOrderIndex]) {
-        playerOrders[activeOrderIndex] = {
-          ...playerOrders[activeOrderIndex],
-          actionId,
-        };
-        renderOrdersSection();
-      }
-    },
-    onBranchFilter: (branch) => {
-      activeBranch = branch === null ? 'all' : branch;
-    },
-  };
-
-  const techTreeState: Partial<TechTreeState> = {
-    selectedNodeId: selectedTechId,
-    filteredBranch: activeBranch === 'all' ? null : activeBranch as BranchId,
-    searchQuery: techSearchTerm,
-  };
-
-  // If we have an existing controller, update it; otherwise create new
-  if (techTreeController) {
-    techTreeController.update(faction, techTreeState);
+  // Use simple tech tree if URL param is set, otherwise use tabbed view
+  if (useSimpleTechTree) {
+    renderSimpleTechTree(techContainer, faction, {
+      onResearch: handleTechResearch,
+    });
   } else {
-    techTreeController = renderTechTree(
-      techContainer,
-      TECH_TREE,
-      faction,
-      callbacks,
-      techTreeState
-    );
+    // Use the new tabbed tech tree
+    if (!tabbedTechTreeController) {
+      tabbedTechTreeController = createTabbedTechTree(
+        techContainer,
+        faction,
+        {
+          activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
+          selectedTechId: selectedTechId,
+          hoveredTechId: null,
+        },
+        {
+          onResearch: handleTechResearch,
+          onBranchChange: (branch) => {
+            activeBranch = branch;
+          },
+        }
+      );
+    } else {
+      tabbedTechTreeController.update(faction, {
+        activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
+        selectedTechId: selectedTechId,
+      });
+    }
   }
 };
 
@@ -282,6 +364,28 @@ const renderLog = (state: GameState): void => {
   state.log.length = 0;
 };
 
+const formatEffectPreview = (effects: EventEffect[]): string => {
+  const parts: string[] = [];
+  for (const effect of effects) {
+    const sign = effect.delta > 0 ? '+' : '';
+    switch (effect.kind) {
+      case 'resource':
+        parts.push(`${sign}${effect.delta} ${effect.key}`);
+        break;
+      case 'score':
+        parts.push(`${sign}${effect.delta} ${effect.key === 'capabilityScore' ? 'capability' : 'safety'}`);
+        break;
+      case 'stat':
+        parts.push(`${sign}${effect.delta} ${effect.key}`);
+        break;
+      case 'globalSafety':
+        parts.push(`${sign}${effect.delta} global safety`);
+        break;
+    }
+  }
+  return parts.join(' · ');
+};
+
 const renderEventPanel = (): void => {
   if (!eventPanel) return;
   if (!pendingEvent) {
@@ -291,12 +395,16 @@ const renderEventPanel = (): void => {
 
   const choicesHtml = pendingEvent.choices
     .map(
-      (choice) => `
-      <button class="event-panel__choice" data-event-choice="${choice.id}">
-        <div class="event-panel__choice-title">${choice.label}</div>
-        <div class="event-panel__choice-desc">${choice.description}</div>
-      </button>
-    `,
+      (choice) => {
+        const effectPreview = formatEffectPreview(choice.effects);
+        return `
+        <button class="event-panel__choice" data-event-choice="${choice.id}">
+          <div class="event-panel__choice-title">${choice.label}</div>
+          <div class="event-panel__choice-desc">${choice.description}</div>
+          ${effectPreview ? `<div class="event-panel__choice-effects">${effectPreview}</div>` : ''}
+        </button>
+      `;
+      },
     )
     .join('');
 
@@ -328,6 +436,143 @@ const renderCommsPanel = (): void => {
   }
 };
 
+// Gamemaster message handler
+const handleGamemasterMessage = async (message: string): Promise<void> => {
+  // Add user message to history
+  gamemasterChatHistory = [
+    ...gamemasterChatHistory,
+    { role: 'user' as const, content: message, timestamp: Date.now() },
+  ];
+  gamemasterLoading = true;
+  renderGamemasterPanelUI();
+
+  try {
+    // Ask the gamemaster
+    const response = await gamemaster.askQuestion(message, state);
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: response, timestamp: Date.now() },
+    ];
+  } catch (error) {
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: 'I encountered an error processing your question. Please try again.', timestamp: Date.now() },
+    ];
+  }
+
+  gamemasterLoading = false;
+  renderGamemasterPanelUI();
+};
+
+// Gamemaster quick action handler
+const handleGamemasterQuickAction = async (action: QuickActionType): Promise<void> => {
+  gamemasterLoading = true;
+  renderGamemasterPanelUI();
+
+  let response: string;
+
+  try {
+    switch (action) {
+      case 'explain-safety':
+        response = await gamemaster.explainMechanics('safety');
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'user' as const, content: 'Explain safety mechanics', timestamp: Date.now() },
+          { role: 'assistant' as const, content: response, timestamp: Date.now() },
+        ];
+        break;
+
+      case 'explain-capability':
+        response = await gamemaster.explainMechanics('capability');
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'user' as const, content: 'Explain capability mechanics', timestamp: Date.now() },
+          { role: 'assistant' as const, content: response, timestamp: Date.now() },
+        ];
+        break;
+
+      case 'explain-actions':
+        response = await gamemaster.explainMechanics('actions');
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'user' as const, content: 'Explain available actions', timestamp: Date.now() },
+          { role: 'assistant' as const, content: response, timestamp: Date.now() },
+        ];
+        break;
+
+      case 'get-advice':
+      case 'what-should-i-do':
+        response = await gamemaster.getStrategicAdvice(state, playerFactionId);
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'user' as const, content: 'What should I do?', timestamp: Date.now() },
+          { role: 'assistant' as const, content: response, timestamp: Date.now() },
+        ];
+        break;
+
+      case 'get-summary':
+        response = await gamemaster.getGameSummary(state);
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'user' as const, content: 'Give me a game summary', timestamp: Date.now() },
+          { role: 'assistant' as const, content: response, timestamp: Date.now() },
+        ];
+        break;
+
+      default:
+        response = 'Unknown action.';
+    }
+  } catch (error) {
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: 'I encountered an error. Please try again.', timestamp: Date.now() },
+    ];
+  }
+
+  gamemasterLoading = false;
+  renderGamemasterPanelUI();
+};
+
+// Render the gamemaster panel
+const renderGamemasterPanelUI = (): void => {
+  if (!gamemasterContainer) return;
+
+  // Inject styles if not already done
+  injectGamemasterStyles();
+
+  if (!gamemasterPanelElement) {
+    // First render - create the panel
+    gamemasterPanelElement = renderGamemasterPanel({
+      state,
+      onSendMessage: handleGamemasterMessage,
+      onQuickAction: handleGamemasterQuickAction,
+      chatHistory: gamemasterChatHistory,
+      currentNarrative: gamemasterNarrative || `Year ${state.year} Q${state.quarter}: The race for AGI intensifies...`,
+      isLoading: gamemasterLoading,
+      factionId: playerFactionId,
+    });
+    gamemasterContainer.replaceChildren(gamemasterPanelElement);
+  } else {
+    // Update existing panel
+    updateGamemasterPanel(gamemasterPanelElement, {
+      chatHistory: gamemasterChatHistory,
+      currentNarrative: gamemasterNarrative || `Year ${state.year} Q${state.quarter}: The race for AGI intensifies...`,
+      isLoading: gamemasterLoading,
+      state,
+    });
+  }
+};
+
+// Update gamemaster narrative after events
+const updateGamemasterNarrative = async (event: EventDefinition, choice: EventChoice): Promise<void> => {
+  try {
+    gamemasterNarrative = await gamemaster.narrateEvent(event, choice);
+    renderGamemasterPanelUI();
+  } catch {
+    // Keep existing narrative on error
+  }
+};
+
 const renderFocusCard = (state: GameState): void => {
   if (!focusCard) return;
   const faction = state.factions[focusFactionId];
@@ -350,6 +595,25 @@ const renderFocusCard = (state: GameState): void => {
   `;
 };
 
+// Render the victory tracker panel
+const renderVictoryTrackerUI = (state: GameState): void => {
+  if (!victoryTrackerContainer) return;
+  if (!campaignStarted) {
+    victoryTrackerContainer.innerHTML = '';
+    return;
+  }
+
+  const trackerElement = renderVictoryTracker(state, playerFactionId, {
+    collapsed: victoryTrackerCollapsed,
+    showDistances: true,
+    onToggle: (collapsed) => {
+      victoryTrackerCollapsed = collapsed;
+      renderVictoryTrackerUI(state);
+    },
+  });
+
+  victoryTrackerContainer.replaceChildren(trackerElement);
+};
 
 // needsTarget is now exported from components, but we keep a local reference for compatibility
 const needsTarget = componentNeedsTarget;
@@ -364,70 +628,26 @@ const getAllowedActions = (factionId: string) => {
   });
 };
 
-// Render the orders section using the new OrdersPanel component
+// Render the orders section using Pax Historia-inspired freeform actions
 const renderOrdersSection = (): void => {
   if (!ordersContainer) return;
 
-  const allowedActions = getAllowedActions(playerFactionId);
-  const targets: ActionTarget[] = Object.values(state.factions)
-    .filter((f) => f.id !== playerFactionId)
-    .map((f) => ({ id: f.id, name: f.name }));
-
-  // Ensure player orders use valid actions for the current faction type
-  const validActionIds = new Set(allowedActions.map((a) => a.id));
-  playerOrders = playerOrders.map((order) => {
-    if (!validActionIds.has(order.actionId)) {
-      return { ...order, actionId: allowedActions[0]?.id || 'policy' };
-    }
-    return order;
-  });
-
-  const ordersPanel = renderOrdersPanel(
-    allowedActions,
-    targets,
-    playerOrders,
-    (index, choice) => {
-      playerOrders[index] = choice;
-      renderOrdersSection();
-    },
-    activeOrderIndex,
-    (index) => {
-      activeOrderIndex = index;
-      renderOrdersSection();
-    }
-  );
-
-  // Render strategy question component
   const playerFaction = state.factions[playerFactionId];
-  const strategyOptions: StrategyQuestionOptions = {
-    turn: (state.year - 2026) * 4 + state.quarter,
-    globalSafety: state.globalSafety,
-    tension: getTension(state),
-    factionType: playerFaction?.type || 'lab',
-  };
+  if (!playerFaction) return;
 
-  const strategyQuestion = renderStrategyQuestion(
-    {
-      ...strategyOptions,
-      promptOverride: 'Narrative Directive (one sentence)',
-      placeholder: 'Example: Invest in safety research and build compute.',
+  // Use Pax Historia-inspired freeform actions UI
+  renderFreeformActions(ordersContainer, playerFaction, state, {
+    onDirectiveSubmit: (directive) => {
+      // Store the narrative directive for processing
+      narrativeDirective = directive;
+      state.log.push(`Directive submitted: "${directive.substring(0, 50)}${directive.length > 50 ? '...' : ''}"`);
+      render(state);
     },
-    narrativeDirective,
-    (answer) => {
-      narrativeDirective = answer;
-    }
-  );
-
-  // Clear and replace the orders section content
-  // Keep the "Play As" selector but replace the rows
-  const playAsLabel = ordersContainer.querySelector('.orders__label');
-  ordersContainer.innerHTML = '';
-
-  if (playAsLabel) {
-    ordersContainer.appendChild(playAsLabel);
-  }
-  ordersContainer.appendChild(ordersPanel);
-  ordersContainer.appendChild(strategyQuestion);
+    onSuggestedAction: async (question) => {
+      // Route to gamemaster for AI help
+      await handleGamemasterMessage(question);
+    },
+  });
 };
 
 const renderPlayerControls = (): void => {
@@ -502,19 +722,58 @@ const renderEndgameOverlay = (state: GameState): void => {
   const winner = state.winnerId ? state.factions[state.winnerId] : null;
   const topCapability = Object.values(state.factions).sort((a, b) => b.capabilityScore - a.capabilityScore)[0];
 
+  // Determine victory/loss type from state
+  const victoryType = state.victoryType as any;
+  const lossType = state.lossType as any;
+
   if (winner) {
     endgameTitle.textContent = `${winner.name} Wins`;
-    endgameSubtitle.textContent = `Safe AGI deployed first in ${state.year} Q${state.quarter}.`;
+    // Use victory type for more descriptive message
+    if (victoryType === 'safe_agi') {
+      endgameSubtitle.textContent = `Safe AGI deployed first in ${state.year} Q${state.quarter}.`;
+    } else if (victoryType === 'dominant') {
+      endgameSubtitle.textContent = `Achieved technological dominance in ${state.year} Q${state.quarter}.`;
+    } else if (victoryType === 'public_trust') {
+      endgameSubtitle.textContent = `Won through public trust and successful products.`;
+    } else if (victoryType === 'regulatory') {
+      endgameSubtitle.textContent = `Regulatory victory - all labs maintained safety through ${state.year}.`;
+    } else if (victoryType === 'alliance') {
+      endgameSubtitle.textContent = `Formed a global AI safety alliance.`;
+    } else if (victoryType === 'control') {
+      endgameSubtitle.textContent = `Achieved total control over AI development.`;
+    } else {
+      endgameSubtitle.textContent = `Campaign complete in ${state.year} Q${state.quarter}.`;
+    }
   } else {
-    endgameTitle.textContent = 'Global Catastrophe';
-    endgameSubtitle.textContent = `Unsafe AGI deployment ended the campaign in ${state.year} Q${state.quarter}.`;
+    // Loss or stalemate
+    if (lossType === 'catastrophe') {
+      endgameTitle.textContent = 'Global Catastrophe';
+      endgameSubtitle.textContent = `Unsafe AGI deployment ended the campaign in ${state.year} Q${state.quarter}.`;
+    } else if (lossType === 'collapse') {
+      endgameTitle.textContent = 'Organization Collapsed';
+      endgameSubtitle.textContent = `Loss of public trust destroyed your organization.`;
+    } else if (lossType === 'obsolescence') {
+      endgameTitle.textContent = 'Made Obsolete';
+      endgameSubtitle.textContent = `Your faction fell too far behind in capability.`;
+    } else if (lossType === 'coup') {
+      endgameTitle.textContent = 'Government Overthrown';
+      endgameSubtitle.textContent = `AI labs grew too powerful and seized control.`;
+    } else {
+      endgameTitle.textContent = 'Stalemate';
+      endgameSubtitle.textContent = `The AGI race ended without a decisive victor.`;
+    }
   }
 
-  endgameMeta.innerHTML = `
-    <div><strong>Global Safety:</strong> ${round1(state.globalSafety)}</div>
-    <div><strong>Top Capability:</strong> ${topCapability?.name ?? 'N/A'} (${round1(topCapability?.capabilityScore ?? 0)})</div>
-    <div><strong>Outcome Rule:</strong> First safe AGI wins; unsafe AGI ends the game for everyone.</div>
-  `;
+  // Render endgame analysis in the meta section
+  const analysisElement = renderEndgameAnalysis(state, playerFactionId, {
+    victoryType,
+    lossType,
+    winnerId: state.winnerId,
+    onRestart: reset,
+  });
+
+  // Replace the meta content with full analysis
+  endgameMeta.replaceChildren(analysisElement);
 
   endgameReset.onclick = reset;
   endgameOverlay.classList.remove('is-hidden');
@@ -526,8 +785,10 @@ const render = (state: GameState): void => {
   renderTechScreen();
   renderLog(state);
   renderFocusCard(state);
+  renderVictoryTrackerUI(state);
   renderEventPanel();
   renderCommsPanel();
+  renderGamemasterPanelUI();
   renderEndgameOverlay(state);
 };
 
@@ -564,6 +825,15 @@ const resolveEventChoice = (choiceId: string): void => {
   const choice = pendingEvent.choices.find((item) => item.id === choiceId);
   if (!choice) return;
 
+  // Record event to gamemaster history
+  gamemaster.recordEvent({
+    turn: state.turn,
+    type: 'event_resolved',
+    eventId: pendingEvent.id,
+    choiceId: choice.id,
+    factionId: playerFactionId,
+  });
+
   applyEventEffects(choice.effects, playerFactionId);
   state.log.push(`${state.factions[playerFactionId]?.name ?? 'Player'} chose: ${choice.label}`);
 
@@ -572,6 +842,11 @@ const resolveEventChoice = (choiceId: string): void => {
     applyEventEffects(aiChoice.effects, factionId);
     state.log.push(`${state.factions[factionId]?.name ?? factionId} chose: ${aiChoice.label}`);
   }
+
+  // Update gamemaster narrative with the event outcome
+  const resolvedEvent = pendingEvent;
+  const resolvedChoice = choice;
+  updateGamemasterNarrative(resolvedEvent, resolvedChoice);
 
   pendingEvent = null;
   pendingEventChoices.clear();
@@ -586,6 +861,7 @@ const triggerEvent = async (): Promise<void> => {
   if (!event) return;
   pendingEvent = event;
   eventHistory.push(event.id);
+  playEvent(); // Sound for new event
   pendingEventChoices = new Map();
 
   const aiFactions = Object.keys(state.factions).filter((id) => id !== playerFactionId);
@@ -611,6 +887,7 @@ const advance = async (): Promise<void> => {
   }
   if (isAdvancing) return;
   isAdvancing = true;
+  playAdvance();
   try {
     const directives = await collectNarrativeDirectives();
     const choices: Record<string, ActionChoice[]> = {};
@@ -622,6 +899,32 @@ const advance = async (): Promise<void> => {
       }
     }
     resolveTurn(state, choices, rng);
+
+    // Record turn advance to gamemaster history
+    gamemaster.recordEvent({
+      turn: state.turn,
+      type: 'turn_advanced',
+    });
+
+    // Play victory/defeat sounds and record statistics
+    if (state.gameOver) {
+      const turnsPlayed = (state.year - 2026) * 4 + state.quarter;
+      const safeDeployment = !!state.winnerId;
+      recordGameEnd(safeDeployment, turnsPlayed, safeDeployment);
+
+      // Record game end in gamemaster history
+      gamemaster.recordEvent({
+        turn: state.turn,
+        type: state.winnerId ? 'agi_deployed' : 'catastrophe',
+        factionId: state.winnerId,
+      });
+
+      if (state.winnerId) {
+        playVictory();
+      } else {
+        playDefeat();
+      }
+    }
 
     if (directives.length) {
       for (const directive of directives) {
@@ -652,6 +955,10 @@ const advance = async (): Promise<void> => {
       narrativeDirective = '';
       renderOrdersSection();
     }
+
+    // Autosave after each turn
+    autosave(state);
+
     render(state);
   } finally {
     isAdvancing = false;
@@ -690,6 +997,17 @@ const reset = (): void => {
     techTreeController.destroy();
     techTreeController = null;
   }
+  if (tabbedTechTreeController) {
+    tabbedTechTreeController.destroy();
+    tabbedTechTreeController = null;
+  }
+  // Reset gamemaster state
+  gamemasterChatHistory = [];
+  gamemasterNarrative = '';
+  gamemasterLoading = false;
+  gamemasterPanelElement = null;
+  gamemaster.clearHistory();
+  activeBranch = 'capabilities';
   activeOrderIndex = 0;
   renderPlayerControls();
   renderStartOverlay();
@@ -705,10 +1023,14 @@ const bindPlayerFactionHandler = () => {
       const value = (target as HTMLSelectElement).value;
       playerFactionId = value || playerFactionId;
       focusFactionId = playerFactionId;
-      // Destroy tech tree controller so it recreates for new faction
+      // Destroy tech tree controllers so they recreate for new faction
       if (techTreeController) {
         techTreeController.destroy();
         techTreeController = null;
+      }
+      if (tabbedTechTreeController) {
+        tabbedTechTreeController.destroy();
+        tabbedTechTreeController = null;
       }
       renderPlayerControls();
       render(state);
@@ -719,6 +1041,36 @@ const bindPlayerFactionHandler = () => {
 const bindFocusHandlers = () => {
   // Faction list click handlers are now handled by the FactionCard component callbacks
   // The onFocusChange callback is passed to renderFactionList
+};
+
+// Tab switching for main screens
+let activeMainTab = 'actions';
+
+const bindTabHandlers = () => {
+  const tabContainer = document.getElementById('mainTabs');
+  if (!tabContainer) return;
+
+  tabContainer.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains('main-tabs__tab')) return;
+
+    const tabId = target.dataset.tab;
+    if (!tabId) return;
+
+    // Update active tab state
+    activeMainTab = tabId;
+
+    // Update tab buttons
+    tabContainer.querySelectorAll('.main-tabs__tab').forEach(tab => {
+      tab.classList.toggle('is-active', tab === target);
+    });
+
+    // Update screen visibility
+    document.querySelectorAll('.main-screen').forEach(screen => {
+      const screenId = screen.id.replace('screen-', '');
+      screen.classList.toggle('is-active', screenId === tabId);
+    });
+  });
 };
 
 const renderStartOverlay = () => {
@@ -753,13 +1105,243 @@ const renderStartOverlay = () => {
     setActiveOrderRow(0);
     renderPlayerControls();
     render(state);
+
+    // Record game start for statistics
+    recordGameStart(playerFactionId);
+
+    // Start tutorial for new players
+    if (!hasTutorialCompleted()) {
+      setTimeout(() => startTutorial(), 500);
+    }
   };
 };
 
 // Event bindings are now handled by the GlobalDashboard component callbacks
 // and the OrdersPanel component callbacks
 
+// Keyboard shortcuts
+let shortcutsOverlayVisible = false;
+
+const createShortcutsOverlay = (): HTMLElement => {
+  const overlay = document.createElement('div');
+  overlay.id = 'shortcutsOverlay';
+  overlay.className = 'overlay shortcuts-overlay';
+  overlay.innerHTML = `
+    <div class="overlay__content">
+      <h2 class="overlay__title">Keyboard Shortcuts</h2>
+      <div class="shortcuts-grid">
+        <div class="shortcut-row"><kbd>Space</kbd> / <kbd>Enter</kbd><span>Advance turn</span></div>
+        <div class="shortcut-row"><kbd>1</kbd> - <kbd>5</kbd><span>Select faction</span></div>
+        <div class="shortcut-row"><kbd>Esc</kbd><span>Close overlay / Deselect</span></div>
+        <div class="shortcut-row"><kbd>S</kbd><span>Quick save</span></div>
+        <div class="shortcut-row"><kbd>L</kbd><span>Quick load</span></div>
+        <div class="shortcut-row"><kbd>F5</kbd><span>Save manager</span></div>
+        <div class="shortcut-row"><kbd>Tab</kbd><span>Statistics</span></div>
+        <div class="shortcut-row"><kbd>R</kbd><span>Reset game</span></div>
+        <div class="shortcut-row"><kbd>T</kbd><span>Restart tutorial</span></div>
+        <div class="shortcut-row"><kbd>M</kbd><span>Toggle sound</span></div>
+        <div class="shortcut-row"><kbd>G</kbd><span>Cycle game speed</span></div>
+        <div class="shortcut-row"><kbd>B</kbd><span>Toggle light/dark theme</span></div>
+        <div class="shortcut-row"><kbd>?</kbd><span>Toggle this help</span></div>
+      </div>
+      <button class="overlay__start" id="closeShortcuts">Close</button>
+    </div>
+  `;
+  return overlay;
+};
+
+const toggleShortcutsOverlay = (): void => {
+  let overlay = document.getElementById('shortcutsOverlay');
+  if (shortcutsOverlayVisible && overlay) {
+    overlay.classList.add('is-hidden');
+    shortcutsOverlayVisible = false;
+  } else {
+    if (!overlay) {
+      overlay = createShortcutsOverlay();
+      document.body.appendChild(overlay);
+      const closeBtn = overlay.querySelector('#closeShortcuts');
+      closeBtn?.addEventListener('click', toggleShortcutsOverlay);
+    }
+    overlay.classList.remove('is-hidden');
+    shortcutsOverlayVisible = true;
+  }
+};
+
+const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
+  // Ignore if user is typing in an input
+  const target = event.target as HTMLElement;
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+
+  // ? or / for help
+  if (key === '?' || (event.shiftKey && key === '/')) {
+    event.preventDefault();
+    toggleShortcutsOverlay();
+    return;
+  }
+
+  // Escape to close overlays
+  if (key === 'escape') {
+    event.preventDefault();
+    if (shortcutsOverlayVisible) {
+      toggleShortcutsOverlay();
+      return;
+    }
+    // Deselect tech
+    if (selectedTechId) {
+      selectedTechId = null;
+      renderTechScreen();
+    }
+    return;
+  }
+
+  // Don't process other shortcuts if overlays are open
+  if (!campaignStarted || state.gameOver || shortcutsOverlayVisible) {
+    // Allow enter to start game
+    if ((key === 'enter' || key === ' ') && !campaignStarted && !shortcutsOverlayVisible) {
+      event.preventDefault();
+      campaignStarted = true;
+      startOverlay?.classList.add('is-hidden');
+      endgameOverlay?.classList.add('is-hidden');
+      setActiveOrderRow(0);
+      renderPlayerControls();
+      render(state);
+    }
+    return;
+  }
+
+  switch (key) {
+    case ' ':
+    case 'enter':
+      event.preventDefault();
+      if (!pendingEvent) {
+        advance();
+      }
+      break;
+
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5': {
+      event.preventDefault();
+      const factionIds = Object.keys(state.factions);
+      const index = parseInt(key) - 1;
+      if (index < factionIds.length) {
+        focusFactionId = factionIds[index];
+        render(state);
+      }
+      break;
+    }
+
+    case 's':
+      event.preventDefault();
+      if (saveToLocalStorage(state, 'quicksave')) {
+        playSave();
+        state.log.push('Game saved to quicksave slot.');
+        render(state);
+      }
+      break;
+
+    case 'l':
+      event.preventDefault();
+      const loadedState = loadFromLocalStorage('quicksave');
+      if (loadedState) {
+        playLoad();
+        state = loadedState;
+        state.log.push('Game loaded from quicksave slot.');
+        render(state);
+      } else {
+        state.log.push('No quicksave found.');
+        render(state);
+      }
+      break;
+
+    case 'm':
+      event.preventDefault();
+      const enabled = toggleAudio();
+      state.log.push(`Sound ${enabled ? 'enabled' : 'disabled'}.`);
+      render(state);
+      break;
+
+    case 'g':
+      event.preventDefault();
+      const newSpeed = cycleSpeed();
+      state.log.push(`Game speed: ${getSpeedLabel()}`);
+      render(state);
+      break;
+
+    case 'r':
+      event.preventDefault();
+      if (confirm('Reset the game? All progress will be lost.')) {
+        reset();
+      }
+      break;
+
+    case 't':
+      event.preventDefault();
+      resetTutorial();
+      startTutorial();
+      break;
+
+    case 'b':
+      event.preventDefault();
+      toggleTheme();
+      const isLight = document.body.classList.contains('theme-light');
+      state.log.push(`Theme: ${isLight ? 'Light' : 'Dark'} mode`);
+      render(state);
+      break;
+  }
+
+  // Function keys (use event.key directly as they're like 'F5')
+  if (event.key === 'F5') {
+    event.preventDefault();
+    showSaveManager(state, {
+      onLoad: (loadedState) => {
+        state = loadedState;
+        render(state);
+      },
+      onClose: () => {},
+    });
+  }
+
+  // Tab for statistics
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    showStatistics();
+  }
+};
+
+document.addEventListener('keydown', handleKeyboardShortcuts);
+
+// Theme initialization - default to light (AI 2027 style)
+const initTheme = (): void => {
+  const savedTheme = localStorage.getItem('agi-race-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  // Default to light theme (AI 2027 off-white style) unless user explicitly chose dark
+  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+  document.body.classList.toggle('theme-light', theme === 'light');
+};
+
+const toggleTheme = (): void => {
+  const isLight = document.body.classList.toggle('theme-light');
+  localStorage.setItem('agi-race-theme', isLight ? 'light' : 'dark');
+};
+
+// Expose theme toggle to window for keyboard shortcut
+declare global {
+  interface Window {
+    toggleTheme?: () => void;
+  }
+}
+window.toggleTheme = toggleTheme;
+
+initTheme();
 bindFocusHandlers();
+bindTabHandlers();
 bindPlayerFactionHandler();
 renderStartOverlay();
 renderPlayerControls();
