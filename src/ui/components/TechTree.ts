@@ -1,6 +1,6 @@
 // TechTree component - Main horizontal tech tree container
 import type { TechNode as TechNodeType, FactionState, BranchId } from '../../core/types.js';
-import { el, div, span, BRANCH_COLORS } from './base.js';
+import { el, div, span, BRANCH_COLORS, formatNum } from './base.js';
 import {
   createTechNode,
   createTechNodeDetail,
@@ -314,7 +314,7 @@ function createProgressCards(
         }),
         div({
           className: 'tech-progress-card__meta',
-          html: `<strong>${unlockedCount}/${totalCount}</strong> techs | <strong>${branchProgress}</strong> RP`,
+          html: `<strong>${unlockedCount}/${totalCount}</strong> techs | <strong>${formatNum(branchProgress)}</strong> RP`,
         }),
       ],
     });

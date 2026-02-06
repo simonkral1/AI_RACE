@@ -243,15 +243,15 @@ export function createTechNodeDetail(
           }),
         ],
       }),
-      // Action buttons (only for available nodes)
-      ...(status === 'available' && callbacks.onResearch
+      // Action buttons - allow branch focus selection from any selected node
+      ...(callbacks.onResearch
         ? [
             div({
               className: 'tech-detail__actions',
               children: [
                 el('button', {
                   className: 'tech-detail__button',
-                  text: 'Research',
+                  text: status === 'available' ? 'Research Now' : 'Set Research Focus',
                   onClick: () => callbacks.onResearch?.(node),
                 }),
               ],

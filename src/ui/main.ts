@@ -40,6 +40,11 @@ const focusCard = document.getElementById('focusCard');
 const startOverlay = document.getElementById('startOverlay');
 const startOptions = document.getElementById('startOptions');
 const startGameButton = document.getElementById('startGame');
+const endgameOverlay = document.getElementById('endgameOverlay');
+const endgameTitle = document.getElementById('endgameTitle');
+const endgameSubtitle = document.getElementById('endgameSubtitle');
+const endgameMeta = document.getElementById('endgameMeta');
+const endgameReset = document.getElementById('endgameReset');
 const headerElement = document.querySelector('header.topbar') as HTMLElement | null;
 const ordersContainer = document.querySelector('.orders') as HTMLElement | null;
 const eventPanel = document.getElementById('eventPanel');
@@ -59,6 +64,7 @@ let pendingEventChoices = new Map<string, string>();
 let eventHistory: string[] = [];
 let commsFeed: DialogueLine[] = [];
 const autoStart = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('autostart') === '1';
+let campaignStarted = autoStart;
 
 // Store player orders as ActionChoice[] for the new component system
 let playerOrders: ActionChoice[] = [
@@ -91,6 +97,7 @@ const getTension = (state: GameState): string => {
 
 const getAgiClock = (state: GameState): string => {
   const best = Math.max(...Object.values(state.factions).map((f) => f.capabilityScore));
+  if (state.gameOver) return state.winnerId ? 'Resolved' : 'Catastrophe';
   if (best > 70) return 'Late phase';
   if (best > 45) return 'Mid phase';
   if (best > 25) return 'Early phase';
@@ -330,6 +337,7 @@ const renderFocusCard = (state: GameState): void => {
   const safety = reveal ? round1(faction.safetyScore) : bandFor(faction.safetyScore).label;
   const compute = reveal ? round1(faction.resources.compute) : bandFor(faction.resources.compute).label;
   const trust = round1(faction.resources.trust);
+  const agiReady = reveal ? (faction.canDeployAgi ? 'Ready' : 'Not Ready') : 'Unknown';
 
   focusCard.innerHTML = `
     <div class="focus-card__title">${faction.name}</div>
@@ -338,6 +346,7 @@ const renderFocusCard = (state: GameState): void => {
     <div class="focus-card__row"><span>Safety</span><span class="focus-card__value">${safety}</span></div>
     <div class="focus-card__row"><span>Compute</span><span class="focus-card__value">${compute}</span></div>
     <div class="focus-card__row"><span>Trust</span><span class="focus-card__value">${trust}</span></div>
+    <div class="focus-card__row"><span>AGI Readiness</span><span class="focus-card__value">${agiReady}</span></div>
   `;
 };
 
@@ -348,7 +357,11 @@ const needsTarget = componentNeedsTarget;
 const getAllowedActions = (factionId: string) => {
   const faction = state.factions[factionId];
   if (!faction) return [];
-  return ACTIONS.filter((action) => action.allowedFor.includes(faction.type));
+  return ACTIONS.filter((action) => {
+    if (!action.allowedFor.includes(faction.type)) return false;
+    if (action.id === 'deploy_agi' && !faction.canDeployAgi) return false;
+    return true;
+  });
 };
 
 // Render the orders section using the new OrdersPanel component
@@ -429,6 +442,7 @@ const renderPlayerControls = (): void => {
       if (faction.id === playerFactionId) option.selected = true;
       playerFactionSelect.appendChild(option);
     }
+    playerFactionSelect.disabled = campaignStarted;
   }
 
   renderOrdersSection();
@@ -443,6 +457,15 @@ const setActiveOrderRow = (index: number) => {
 const renderHeader = (state: GameState): void => {
   if (!headerElement) return;
 
+  const canAdvance = campaignStarted && !state.gameOver && !pendingEvent;
+  const advanceLabel = !campaignStarted
+    ? 'Select Faction'
+    : pendingEvent
+      ? 'Resolve Event'
+      : state.gameOver
+        ? 'Campaign Ended'
+        : 'Advance Quarter';
+
   const dashboardState = {
     globalSafety: state.globalSafety,
     year: state.year,
@@ -450,6 +473,8 @@ const renderHeader = (state: GameState): void => {
     turn: (state.year - 2026) * 4 + state.quarter,
     tension: getTension(state),
     agiClock: getAgiClock(state),
+    canAdvance,
+    advanceLabel,
   };
 
   const dashboard = renderGlobalDashboard(
@@ -466,6 +491,35 @@ const renderHeader = (state: GameState): void => {
   headerElement.replaceChildren(dashboard);
 };
 
+const renderEndgameOverlay = (state: GameState): void => {
+  if (!endgameOverlay || !endgameTitle || !endgameSubtitle || !endgameMeta || !endgameReset) return;
+
+  if (!campaignStarted || !state.gameOver) {
+    endgameOverlay.classList.add('is-hidden');
+    return;
+  }
+
+  const winner = state.winnerId ? state.factions[state.winnerId] : null;
+  const topCapability = Object.values(state.factions).sort((a, b) => b.capabilityScore - a.capabilityScore)[0];
+
+  if (winner) {
+    endgameTitle.textContent = `${winner.name} Wins`;
+    endgameSubtitle.textContent = `Safe AGI deployed first in ${state.year} Q${state.quarter}.`;
+  } else {
+    endgameTitle.textContent = 'Global Catastrophe';
+    endgameSubtitle.textContent = `Unsafe AGI deployment ended the campaign in ${state.year} Q${state.quarter}.`;
+  }
+
+  endgameMeta.innerHTML = `
+    <div><strong>Global Safety:</strong> ${round1(state.globalSafety)}</div>
+    <div><strong>Top Capability:</strong> ${topCapability?.name ?? 'N/A'} (${round1(topCapability?.capabilityScore ?? 0)})</div>
+    <div><strong>Outcome Rule:</strong> First safe AGI wins; unsafe AGI ends the game for everyone.</div>
+  `;
+
+  endgameReset.onclick = reset;
+  endgameOverlay.classList.remove('is-hidden');
+};
+
 const render = (state: GameState): void => {
   renderHeader(state);
   renderFactions(state);
@@ -474,6 +528,7 @@ const render = (state: GameState): void => {
   renderFocusCard(state);
   renderEventPanel();
   renderCommsPanel();
+  renderEndgameOverlay(state);
 };
 
 // Read player orders from the state (maintained by the OrdersPanel component)
@@ -609,7 +664,14 @@ const reset = (): void => {
   state = createInitialState();
   playerFactionId = 'us_lab_a';
   focusFactionId = playerFactionId;
-  startOverlay?.classList.remove('is-hidden');
+  if (autoStart) {
+    campaignStarted = true;
+    startOverlay?.classList.add('is-hidden');
+  } else {
+    campaignStarted = false;
+    startOverlay?.classList.remove('is-hidden');
+  }
+  endgameOverlay?.classList.add('is-hidden');
   techSearchTerm = '';
   selectedTechId = null;
   // Reset player orders to defaults
@@ -662,13 +724,12 @@ const bindFocusHandlers = () => {
 const renderStartOverlay = () => {
   if (!startOverlay || !startOptions || !startGameButton) return;
   if (autoStart) {
+    campaignStarted = true;
     startOverlay.classList.add('is-hidden');
-    const playerSelect = ordersContainer?.querySelector('#playerFaction') as HTMLSelectElement | null;
-    if (playerSelect) playerSelect.disabled = true;
-    renderOrdersSection();
-    renderTechScreen();
+    endgameOverlay?.classList.add('is-hidden');
     return;
   }
+  campaignStarted = false;
   startOptions.innerHTML = '';
   const factions = Object.values(state.factions);
   for (const faction of factions) {
@@ -686,10 +747,9 @@ const renderStartOverlay = () => {
   }
 
   startGameButton.onclick = () => {
+    campaignStarted = true;
     startOverlay.classList.add('is-hidden');
-    // Disable the player faction selector after game starts
-    const playerFactionSelect = ordersContainer?.querySelector('#playerFaction') as HTMLSelectElement | null;
-    if (playerFactionSelect) playerFactionSelect.disabled = true;
+    endgameOverlay?.classList.add('is-hidden');
     setActiveOrderRow(0);
     renderPlayerControls();
     render(state);
@@ -706,11 +766,19 @@ renderPlayerControls();
 render(state);
 
 const renderGameToText = (): string => {
+  const outcome = state.gameOver
+    ? (state.winnerId ? `winner:${state.winnerId}` : 'catastrophe')
+    : 'in_progress';
+  const playerFaction = state.factions[playerFactionId];
   const payload = {
-    mode: state.gameOver ? 'ended' : 'running',
+    mode: campaignStarted ? (state.gameOver ? 'ended' : 'running') : 'setup',
     year: state.year,
     quarter: state.quarter,
+    gameOver: state.gameOver,
+    winnerId: state.winnerId ?? null,
+    outcome,
     playerFactionId,
+    playerCanDeployAgi: playerFaction?.canDeployAgi ?? false,
     focusFactionId,
     activeBranch,
     selectedTechId,

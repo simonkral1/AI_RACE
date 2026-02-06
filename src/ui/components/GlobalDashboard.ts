@@ -10,6 +10,8 @@ export interface DashboardState {
   turn: number;
   tension?: string;
   agiClock?: string;
+  canAdvance?: boolean;
+  advanceLabel?: string;
 }
 
 export interface GlobalDashboardOptions {
@@ -94,13 +96,17 @@ export function renderGlobalDashboard(
   const rightSection = div({ className: 'global-dashboard__right' });
 
   const advanceBtn = button({
-    className: 'global-dashboard__btn global-dashboard__btn--advance',
-    text: 'Advance Quarter',
+    id: 'nextTurn',
+    className: 'btn global-dashboard__btn global-dashboard__btn--advance',
+    attrs: { type: 'button', disabled: state.canAdvance === false },
+    text: state.advanceLabel ?? 'Advance Quarter',
     onClick: onAdvance,
   });
 
   const resetBtn = button({
-    className: 'global-dashboard__btn global-dashboard__btn--reset',
+    id: 'reset',
+    className: 'btn btn--ghost global-dashboard__btn global-dashboard__btn--reset',
+    attrs: { type: 'button' },
     text: 'Reset',
     onClick: onReset,
   });

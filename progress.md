@@ -6,6 +6,35 @@ Original prompt: "Let's try to make a plan for building a kind of video game... 
 - 2026-02-05: Merged duplicate tech tree panels into the Technology Atlas screen; added search, branch progress pills, and “Set Research Focus” action.
 - 2026-02-05: Added event system scaffolding + interlab comms feed with LLM-backed dialogue generation.
 - 2026-02-05: Fixed tech tree branch visuals with per-branch accents and branch-colored connectors.
+- 2026-02-05: QA sweep with Playwright matrix across start flow, autostart, tabs, focus selection, node detail, advance/reset controls, and render_game_to_text parity.
+- 2026-02-05: Restored control compatibility after dashboard component swap by adding `#nextTurn` / `#reset` IDs and preserving button classes for existing automation selectors.
+- 2026-02-05: Fixed campaign lifecycle state: introduced explicit `campaignStarted` gating so setup mode persists until campaign start, overlay/autostart behavior is consistent, and `Play As` selector lock remains stable.
+- 2026-02-05: Fixed tech tree progress formatting by normalizing RP display to formatted numbers (removed floating precision artifacts like `20.88000000000001`).
+- 2026-02-05: Deep scenario check confirms event choice lifecycle works end-to-end (`pendingEvent` appears after advance and clears after choice), comms feed updates on advance, and selected overlay faction carries into running game.
+- 2026-02-05: Research focus control verified and hardened: selecting an order row + selecting any tech node now supports explicit branch targeting via detail-panel action (`Research Now` for available tech, `Set Research Focus` for locked/unlocked tech), and correctly updates the active order action.
+- 2026-02-05: Added endgame UX and lifecycle hardening: campaign-end overlay for safe AGI win/catastrophe, advance button disable/label states across setup/event/game-over, and deploy-AGI action hidden until faction unlocks AGI.
+- 2026-02-05: Added AGI readiness visibility to focus dossier.
+- 2026-02-05: Added autonomous validation loop:
+  - `scripts/playtest_assert.mjs` deterministic browser assertions (setup->running, research focus mutation, event resolution, deploy gate)
+  - `scripts/autonomous_dev_loop.sh` cycle runner (test/build/sim/playtest) with finite or continuous modes
+  - npm scripts: `qa:playtest`, `loop:dev`, `loop:dev:continuous`
+- 2026-02-05: Ran `loop:dev` single cycle successfully; artifacts in `output/loop/cycle-1/` and `output/loop/latest/`.
+- 2026-02-05: Added loop operator scripts for detached continuous runs:
+  - `scripts/start_autonomous_loop.sh`
+  - `scripts/stop_autonomous_loop.sh`
+  - `scripts/autonomous_loop_status.sh`
+  - npm scripts: `loop:start`, `loop:stop`, `loop:status`
+- 2026-02-05: Added Codex Web agent prompt package:
+  - `docs/CODEX_WEB_AGENT_AUTONOMOUS_PROMPT.md`
+  - `scripts/copy_codex_web_prompt.sh`
+  - npm script: `prompt:codex-web`
+- 2026-02-05: Verified loop lifecycle scripts end-to-end (`loop:start` -> `loop:status` -> `loop:stop`) and prompt copy flow.
+- 2026-02-05: Hardened autonomous loop singleton behavior:
+  - `scripts/autonomous_dev_loop.sh` now checks both `loop.pid` and `loop.lock` to prevent duplicate foreground/background runners.
+  - `loop:dev:continuous` now exits immediately with a clear message when another loop is active.
 - TODO: Add board interactions (node click sets target/order) and POV intel system.
 - TODO: Add event deck + modal choices.
 - TODO: Add proper canvas renderer + render_game_to_text + advanceTime for automated Playwright testing.
+- TODO: Add an integration test harness (Playwright smoke spec in repo) for startup mode transitions, legacy selectors, and event resolution.
+- TODO: Add deterministic event trigger hook for test mode (avoid one-turn-only assumptions in external scripts).
+- TODO: Add distinct government victory/score condition and post-game timeline summary panel.

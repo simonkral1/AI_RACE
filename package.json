@@ -11,7 +11,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "qa:playtest": "node scripts/playtest_assert.mjs",
+    "loop:dev": "bash scripts/autonomous_dev_loop.sh",
+    "loop:dev:continuous": "bash scripts/autonomous_dev_loop.sh --cycles 0 --sleep 10",
+    "loop:start": "bash scripts/start_autonomous_loop.sh",
+    "loop:stop": "bash scripts/stop_autonomous_loop.sh",
+    "loop:status": "bash scripts/autonomous_loop_status.sh",
+    "prompt:codex-web": "bash scripts/copy_codex_web_prompt.sh"
   },
   "keywords": [],
   "author": "",

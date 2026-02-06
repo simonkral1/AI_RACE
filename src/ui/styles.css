@@ -103,6 +103,17 @@ h1, h2.serif {
   color: var(--muted);
 }
 
+.overlay__meta {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  text-align: left;
+}
+
 .overlay__options {
   display: grid;
   gap: 10px;
@@ -194,6 +205,13 @@ h1, h2.serif {
 .btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 12px 24px rgba(45, 90, 39, 0.2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .btn--ghost {
@@ -1990,6 +2008,13 @@ h1, h2.serif {
 .global-dashboard__btn--reset:hover {
   background: rgba(255, 255, 255, 0.05);
   color: var(--ink);
+}
+
+.global-dashboard__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Responsive improvements for dashboard */
