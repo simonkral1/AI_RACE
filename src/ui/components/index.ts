@@ -3,6 +3,26 @@
 // Base utilities
 export * from './base.js';
 
+// Modal system
+export {
+  createModal,
+  showModal,
+  showConfirmModal,
+  MODAL_STYLES,
+  type ModalOptions,
+  type ModalButton,
+  type ModalInstance,
+} from './Modal.js';
+
+// Event Modal
+export {
+  EventModal,
+  renderEventModal,
+  EVENT_MODAL_STYLES,
+  type EventModalCallbacks,
+  type EventModalState,
+} from './EventModal.js';
+
 // Victory tracking
 export {
   renderVictoryTracker,
@@ -133,3 +153,44 @@ export {
   type TabbedTechTreeCallbacks,
   type TabbedTechTreeState,
 } from './TabbedTechTree.js';
+
+// Compact Actions Panel (new simplified right panel)
+export {
+  renderCompactActionsPanel,
+  updateCompactActionsPanel,
+  COMPACT_ACTIONS_PANEL_STYLES,
+  type CompactActionsPanelOptions,
+  type CompactActionsPanelCallbacks,
+} from './CompactActionsPanel.js';
+
+// Gamemaster Modal
+export {
+  renderGamemasterModal,
+  updateGamemasterModal,
+  showGamemasterModal,
+  hideGamemasterModal,
+  injectGamemasterModalStyles,
+  type ChatMessage,
+  type QuickActionType,
+  type GamemasterModalOptions,
+  type GamemasterModalUpdateOptions,
+} from './GamemasterModal.js';
+
+// Tech Tree Modal
+export {
+  TechTreeModal,
+  renderTechTreeModal,
+  TECH_TREE_MODAL_STYLES,
+  type TechTreeModalCallbacks,
+  type TechTreeModalState,
+} from './TechTreeModal.js';
+
+// Expanded Command Center
+export {
+  renderExpandedCommandCenter,
+  updateExpandedCommandCenter,
+  EXPANDED_COMMAND_CENTER_STYLES,
+  type ExpandedCommandCenterOptions,
+  type ExpandedCommandCenterCallbacks,
+  type StrategicSituation,
+} from './ExpandedCommandCenter.js';

@@ -1,41 +1,73 @@
 import 'dotenv/config';
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 
-const DEFAULT_BASE_URL = 'https://api.hyperbolic.xyz/v1/chat/completions';
-const DEFAULT_MODEL = 'Qwen/Qwen3-Next-80B-A3B-Thinking';
-const DEFAULT_MAX_TOKENS = 220;
-const DEFAULT_TEMPERATURE = 0.7;
-const DEFAULT_TOP_P = 0.8;
-const DEFAULT_TIMEOUT_MS = 8000;
+const DEFAULT_MODEL = 'claude-opus-4-6';
 const DEFAULT_PORT = 8787;
+const DEFAULT_TIMEOUT_MS = 30000;
 
 const env = (key: string, fallback?: string): string | undefined => process.env[key] ?? fallback;
 
-const apiKey = env('HYPERBOLIC_API_KEY');
-if (!apiKey) {
-  console.error('Missing HYPERBOLIC_API_KEY. Set it before starting the proxy.');
-  process.exit(1);
-}
-
-const baseUrl = env('HYPERBOLIC_BASE_URL', DEFAULT_BASE_URL) as string;
-const model = env('HYPERBOLIC_MODEL', DEFAULT_MODEL) as string;
-const maxTokens = Number(env('HYPERBOLIC_MAX_TOKENS', String(DEFAULT_MAX_TOKENS)));
-const temperature = Number(env('HYPERBOLIC_TEMPERATURE', String(DEFAULT_TEMPERATURE)));
-const topP = Number(env('HYPERBOLIC_TOP_P', String(DEFAULT_TOP_P)));
-const timeoutMs = Number(env('HYPERBOLIC_TIMEOUT_MS', String(DEFAULT_TIMEOUT_MS)));
 const port = Number(env('LLM_PROXY_PORT', String(DEFAULT_PORT)));
 const corsOrigin = env('LLM_PROXY_CORS_ORIGIN', '*') as string;
 
-const fetchWithTimeout = async (url: string, options: RequestInit, timeout: number): Promise<Response> => {
-  if (typeof fetch !== 'function') throw new Error('Fetch is not available in this runtime.');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+// Map model IDs to claude CLI model flags
+const MODEL_MAP: Record<string, string> = {
+  'claude-opus-4-6': 'opus',
+  'claude-sonnet-4-5-20250929': 'sonnet',
+  'claude-haiku-4-5-20251001': 'haiku',
+  'opus': 'opus',
+  'sonnet': 'sonnet',
+  'haiku': 'haiku',
 };
+
+function resolveModel(model?: string): string {
+  if (!model) return MODEL_MAP[DEFAULT_MODEL] ?? 'opus';
+  return MODEL_MAP[model] ?? model;
+}
+
+function runClaude(systemPrompt: string, userPrompt: string, model: string, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const procEnv = { ...process.env };
+    delete procEnv.ANTHROPIC_API_KEY; // Force subscription auth
+
+    const args = [
+      '--print',
+      '--model', model,
+      '--output-format', 'text',
+      '--tools', '',
+      '--setting-sources', '',
+      '--system-prompt', systemPrompt,
+      userPrompt,
+    ];
+
+    let stdout = '';
+    let stderr = '';
+
+    const proc = spawn('claude', args, { env: procEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+    proc.stdout.on('data', (data) => { stdout += data.toString(); });
+    proc.stderr.on('data', (data) => { stderr += data.toString(); });
+
+    const timer = setTimeout(() => {
+      proc.kill('SIGTERM');
+      reject(new Error(`Timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(stderr || `claude exited with code ${code}`));
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
 
 const sendJson = (res: http.ServerResponse, status: number, payload: unknown): void => {
   const body = JSON.stringify(payload);
@@ -89,73 +121,49 @@ const server = http.createServer(async (req, res) => {
       prompt?: string;
       messages?: Array<{ role: string; content: string }>;
       model?: string;
-      max_tokens?: number;
-      maxTokens?: number;
-      temperature?: number;
-      top_p?: number;
-      topP?: number;
     };
 
-    let messages = payload?.messages;
-    if (!messages || messages.length === 0) {
-      const prompt = payload?.prompt;
-      if (!prompt || typeof prompt !== 'string') {
-        sendJson(res, 400, { error: 'Missing prompt or messages' });
-        return;
+    const messages = payload?.messages ?? [];
+    const systemParts: string[] = [];
+    const userParts: string[] = [];
+
+    for (const msg of messages) {
+      if (msg.role === 'system') {
+        systemParts.push(msg.content);
+      } else {
+        userParts.push(msg.content);
       }
-      messages = [
-        {
-          role: 'system',
-          content: 'You are a strategy game AI. Output JSON only, no markdown, no code fences, no extra keys.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ];
     }
 
-    const resolvedModel = typeof payload.model === 'string' ? payload.model : model;
-    const resolvedMaxTokens = payload.max_tokens ?? payload.maxTokens ?? maxTokens;
-    const resolvedTemperature = payload.temperature ?? temperature;
-    const resolvedTopP = payload.top_p ?? payload.topP ?? topP;
+    // Handle prompt-only requests
+    if (userParts.length === 0 && typeof payload.prompt === 'string') {
+      if (systemParts.length === 0) {
+        systemParts.push('You are a strategy game AI. Output JSON only, no markdown, no code fences, no extra keys.');
+      }
+      userParts.push(payload.prompt);
+    }
 
-    const body = {
-      model: resolvedModel,
-      max_tokens: Number.isFinite(resolvedMaxTokens) ? resolvedMaxTokens : DEFAULT_MAX_TOKENS,
-      temperature: Number.isFinite(resolvedTemperature) ? resolvedTemperature : DEFAULT_TEMPERATURE,
-      top_p: Number.isFinite(resolvedTopP) ? resolvedTopP : DEFAULT_TOP_P,
-      messages,
-    };
-
-    const response = await fetchWithTimeout(
-      baseUrl,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      },
-      Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS,
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      sendJson(res, response.status, { error: 'Upstream error', detail: text.slice(0, 500) });
+    if (userParts.length === 0) {
+      sendJson(res, 400, { error: 'Missing prompt or messages' });
       return;
     }
 
-    const upstream = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const content = upstream?.choices?.[0]?.message?.content ?? '';
+    const model = resolveModel(payload.model);
+    const systemPrompt = systemParts.join('\n\n') || 'You are a strategy game AI. Output JSON only, no markdown, no code fences, no extra keys.';
+    const userPrompt = userParts.join('\n\n');
+
+    console.log(`[LLM Proxy] Calling claude --print --model ${model}`);
+
+    const content = await runClaude(systemPrompt, userPrompt, model, DEFAULT_TIMEOUT_MS);
     sendJson(res, 200, { content });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    sendJson(res, 500, { error: message });
+    // Graceful degradation: avoid hard-failing the UI when local LLM tooling is unavailable.
+    sendJson(res, 200, { content: null, degraded: true, error: message });
   }
 });
 
 server.listen(port, () => {
   console.log(`LLM proxy listening on http://localhost:${port}/api/llm`);
+  console.log(`Using claude CLI with subscription (model: ${resolveModel()})`);
 });

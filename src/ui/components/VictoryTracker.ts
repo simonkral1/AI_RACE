@@ -307,9 +307,9 @@ export function renderMiniVictoryBars(
 // CSS styles for the component
 export const VICTORY_TRACKER_STYLES = `
 .victory-tracker {
-  background: var(--panel-bg, #1a1a2e);
-  border: 1px solid var(--border-color, #333);
-  border-radius: 8px;
+  background: var(--panel, #ffffff);
+  border: 1px solid var(--line, rgba(0,0,0,0.08));
+  border-radius: 2px;
   padding: 12px;
   margin: 8px 0;
 }
@@ -329,20 +329,20 @@ export const VICTORY_TRACKER_STYLES = `
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
 }
 
 .victory-tracker__toggle {
   background: none;
   border: none;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   cursor: pointer;
   font-size: 12px;
   padding: 4px 8px;
 }
 
 .victory-tracker__toggle:hover {
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
 }
 
 .victory-tracker__summary {
@@ -350,9 +350,9 @@ export const VICTORY_TRACKER_STYLES = `
   gap: 16px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   padding: 4px 0;
-  border-bottom: 1px solid var(--border-color, #333);
+  border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
   margin-bottom: 8px;
 }
 
@@ -375,7 +375,7 @@ export const VICTORY_TRACKER_STYLES = `
 .victory-tracker__section--warnings {
   background: rgba(244, 67, 54, 0.1);
   padding: 8px;
-  border-radius: 4px;
+  border-radius: 2px;
   border-left: 3px solid var(--danger-color, #f44336);
 }
 
@@ -383,7 +383,7 @@ export const VICTORY_TRACKER_STYLES = `
   margin: 0 0 8px 0;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -391,8 +391,8 @@ export const VICTORY_TRACKER_STYLES = `
 .victory-tracker__item {
   margin-bottom: 12px;
   padding: 8px;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 2px;
 }
 
 .victory-tracker__item--warning {
@@ -414,13 +414,13 @@ export const VICTORY_TRACKER_STYLES = `
   flex: 1;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
 }
 
 .victory-tracker__item-percentage {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
   min-width: 40px;
   text-align: right;
 }
@@ -428,15 +428,15 @@ export const VICTORY_TRACKER_STYLES = `
 .victory-tracker__bar-container {
   position: relative;
   height: 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 2px;
   overflow: hidden;
   margin-bottom: 4px;
 }
 
 .victory-tracker__bar {
   height: 100%;
-  border-radius: 4px;
+  border-radius: 2px;
   transition: width 0.3s ease;
 }
 
@@ -445,27 +445,27 @@ export const VICTORY_TRACKER_STYLES = `
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.4);
   transform: translateX(-1px);
 }
 
 .victory-tracker__item-status {
   font-size: 11px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   margin-top: 4px;
 }
 
 .victory-tracker__requirements {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px dashed var(--border-color, #333);
+  border-top: 1px dashed var(--border-color, rgba(0,0,0,0.08));
 }
 
 .victory-tracker__req-list {
   margin: 0;
   padding-left: 16px;
   font-size: 10px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
 }
 
 .victory-tracker__req-list li {
@@ -486,8 +486,8 @@ export const VICTORY_TRACKER_STYLES = `
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .victory-summary__closest {
@@ -514,7 +514,7 @@ export const VICTORY_TRACKER_STYLES = `
 }
 
 .victory-summary__label {
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
 }
 
 .victory-summary__progress,
@@ -542,7 +542,7 @@ export const VICTORY_TRACKER_STYLES = `
 .victory-mini-bars__bar {
   width: 40px;
   height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.08);
   border-radius: 2px;
   overflow: hidden;
 }

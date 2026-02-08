@@ -16,7 +16,7 @@ export interface ConnectorOptions {
 }
 
 const DEFAULT_OPTIONS: Required<ConnectorOptions> = {
-  defaultColor: 'rgba(255, 255, 255, 0.15)',
+  defaultColor: 'rgba(0, 0, 0, 0.12)',
   highlightColor: 'rgba(246, 192, 106, 0.6)',
   strokeWidth: 2,
   highlightStrokeWidth: 3,

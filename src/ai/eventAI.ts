@@ -2,6 +2,7 @@ import type { GameState } from '../core/types.js';
 import { FACTION_TEMPLATES } from '../data/factions.js';
 import type { EventChoice, EventDefinition } from '../data/events.js';
 import { callLlm } from './llmClient.js';
+import { extractJsonSnippet } from './llmParsing.js';
 
 const getFactionStrategy = (factionId: string) => {
   const template = FACTION_TEMPLATES.find((item) => item.id === factionId);
@@ -49,6 +50,17 @@ const scoreChoice = (choice: EventChoice, factionId: string, state: GameState): 
 };
 
 const extractChoiceId = (raw: string, choices: EventChoice[]): string | null => {
+  const jsonText = extractJsonSnippet(raw, 'object');
+  if (jsonText) {
+    try {
+      const json = JSON.parse(jsonText) as { choiceId?: string };
+      if (json.choiceId && choices.some((choice) => choice.id === json.choiceId)) {
+        return json.choiceId;
+      }
+    } catch {
+      // fall through to text-matching fallback
+    }
+  }
   const trimmed = raw.trim();
   if (!trimmed) return null;
   try {

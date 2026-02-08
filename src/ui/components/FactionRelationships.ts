@@ -247,7 +247,7 @@ function createRelationshipsSVG(
         'text-anchor': 'middle',
         fill: colors.stroke,
         'font-size': 9,
-        'font-family': 'Space Grotesk, sans-serif',
+        'font-family': 'var(--font), sans-serif',
         class: 'relationship-label',
       });
       labelText.textContent = rel.label;
@@ -280,7 +280,7 @@ function createRelationshipsSVG(
       cy: 0,
       r: 28,
       fill: 'none',
-      stroke: isPlayer ? 'rgba(138, 192, 108, 0.5)' : 'rgba(255, 255, 255, 0.15)',
+      stroke: isPlayer ? 'rgba(138, 192, 108, 0.5)' : 'rgba(0, 0, 0, 0.12)',
       'stroke-width': isHighlighted ? 2 : 1,
     });
     nodeGroup.appendChild(outerRing);
@@ -304,7 +304,7 @@ function createRelationshipsSVG(
       fill: 'var(--ink)',
       'font-size': 14,
       'font-weight': 600,
-      'font-family': 'Space Grotesk, sans-serif',
+      'font-family': 'var(--font), sans-serif',
     });
     initial.textContent = faction.name.charAt(0);
     nodeGroup.appendChild(initial);
@@ -317,7 +317,7 @@ function createRelationshipsSVG(
       fill: 'var(--ink)',
       'font-size': 10,
       'font-weight': 500,
-      'font-family': 'Space Grotesk, sans-serif',
+      'font-family': 'var(--font), sans-serif',
     });
     nameLabel.textContent = faction.name;
     nodeGroup.appendChild(nameLabel);

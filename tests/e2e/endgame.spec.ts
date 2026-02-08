@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // Helper to advance turn, handling events if they appear
 async function advanceTurn(page: any) {
   // Check for and resolve any pending event first
-  const eventChoice = page.locator('.event-panel__choice');
+  const eventChoice = page.locator('.event-modal__choice');
   const choiceCount = await eventChoice.count();
   if (choiceCount > 0) {
     await eventChoice.first().click();
@@ -11,15 +11,15 @@ async function advanceTurn(page: any) {
   }
 
   // Now click advance button
-  const advanceBtn = page.locator('.global-dashboard__btn--advance');
+  const advanceBtn = page.locator('.command-center__advance-btn');
   await advanceBtn.click();
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(900);
 }
 
 // Increase timeout for tests that advance multiple turns (AI processing can be slow)
 test.describe('Endgame Scenarios', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/?autostart=1');
+    await page.goto('/?autostart=1&no_llm=1');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
   });
@@ -28,7 +28,7 @@ test.describe('Endgame Scenarios', () => {
     test.setTimeout(120000); // 2 minutes for this test
 
     // Wait for button to be ready
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     // Advance 5 turns with longer waits for AI processing
@@ -51,7 +51,7 @@ test.describe('Endgame Scenarios', () => {
   test('game state updates correctly through multiple turns', async ({ page }) => {
     test.setTimeout(90000);
 
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     // Get initial state
@@ -100,7 +100,7 @@ test.describe('Endgame Scenarios', () => {
   test('faction capabilities change over time', async ({ page }) => {
     test.setTimeout(120000);
 
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     // Get initial faction data
@@ -133,7 +133,7 @@ test.describe('Endgame Scenarios', () => {
   test('global safety updates as game progresses', async ({ page }) => {
     test.setTimeout(90000);
 
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     // Advance turns
@@ -154,7 +154,7 @@ test.describe('Endgame Scenarios', () => {
   test('log shows game activity', async ({ page }) => {
     test.setTimeout(60000);
 
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     // Advance a few turns
@@ -163,7 +163,7 @@ test.describe('Endgame Scenarios', () => {
     }
 
     // Recent actions log should have entries
-    const logEntries = page.locator('#recentActions li');
+    const logEntries = page.locator('.command-center__log-item');
     const count = await logEntries.count();
 
     expect(count).toBeGreaterThanOrEqual(0); // May be 0 if log cleared
@@ -172,13 +172,13 @@ test.describe('Endgame Scenarios', () => {
   test('events can be resolved', async ({ page }) => {
     test.setTimeout(90000);
 
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     // Advance until we might get an event
     for (let i = 0; i < 6; i++) {
       // Check if event panel has choices
-      const eventChoice = page.locator('.event-panel__choice');
+      const eventChoice = page.locator('.event-modal__choice');
       const choiceCount = await eventChoice.count();
 
       if (choiceCount > 0) {
@@ -201,16 +201,16 @@ test.describe('Long Session Stability', () => {
   test('game remains stable through 10 turns', async ({ page }) => {
     test.setTimeout(180000); // 3 minutes
 
-    await page.goto('/?autostart=1');
+    await page.goto('/?autostart=1&no_llm=1');
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(500);
 
-    const advanceBtn = page.locator('.global-dashboard__btn--advance');
+    const advanceBtn = page.locator('.command-center__advance-btn');
     await expect(advanceBtn).toBeVisible({ timeout: 10000 });
 
     for (let turn = 0; turn < 10; turn++) {
       // Check for event and resolve if present
-      const eventChoice = page.locator('.event-panel__choice');
+      const eventChoice = page.locator('.event-modal__choice');
       const choiceCount = await eventChoice.count();
 
       if (choiceCount > 0) {

@@ -20,7 +20,7 @@ function canResearch(tech: TechNode, faction: FactionState): boolean {
 
 function getTechCost(tech: TechNode, faction: FactionState): number {
   const progress = faction.research[tech.branch] || 0;
-  return Math.max(0, tech.cost - Math.floor(progress / 10));
+  return Math.max(0, tech.cost - Math.floor(progress));
 }
 
 export function renderSimpleTechTree(

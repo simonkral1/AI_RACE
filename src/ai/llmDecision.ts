@@ -3,6 +3,7 @@ import { ActionChoice, ActionDefinition, GameState } from '../core/types.js';
 import { ACTIONS } from '../data/actions.js';
 import { FACTION_TEMPLATES } from '../data/factions.js';
 import { callLlm } from './llmClient.js';
+import { extractJsonSnippet } from './llmParsing.js';
 
 const TARGET_REQUIRED = new Set(['espionage', 'subsidize', 'regulate']);
 
@@ -83,21 +84,6 @@ const buildPrompt = (state: GameState, factionId: string, allowedActions: Action
   return `You are a strategy game AI.\n\n${JSON.stringify(payload)}`;
 };
 
-const extractJson = (raw: string): string | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed;
-  const codeFenceMatch = trimmed.match(/```(?:json)?([\s\S]*?)```/i);
-  if (codeFenceMatch?.[1]) {
-    const fenced = codeFenceMatch[1].trim();
-    if (fenced.startsWith('{') && fenced.endsWith('}')) return fenced;
-  }
-  const start = trimmed.indexOf('{');
-  const end = trimmed.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return trimmed.slice(start, end + 1);
-};
-
 const normalizeChoices = (
   raw: unknown,
   allowedActions: Set<string>,
@@ -162,7 +148,7 @@ export const decideActionsWithLlm = async (
     );
     if (!content) return null;
 
-    const json = extractJson(content);
+    const json = extractJsonSnippet(content, 'object');
     if (!json) return null;
     const parsed = JSON.parse(json);
     const normalized = normalizeChoices(parsed, allowedSet, factionId, state);

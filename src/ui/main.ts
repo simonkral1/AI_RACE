@@ -60,10 +60,36 @@ import {
   type VictoryTrackerOptions,
 } from './components/index.js';
 
+// Import modal components
+import {
+  EventModal,
+  type EventModalCallbacks,
+} from './components/EventModal.js';
+import {
+  showGamemasterModal,
+  hideGamemasterModal,
+  updateGamemasterModal,
+  injectGamemasterModalStyles,
+  type ChatMessage as GMChatMessage,
+  type QuickActionType as GMQuickActionType,
+} from './components/GamemasterModal.js';
+
+// Import new Command Center and Tech Tree Modal
+import {
+  TechTreeModal,
+  TECH_TREE_MODAL_STYLES,
+} from './components/TechTreeModal.js';
+import {
+  renderExpandedCommandCenter,
+  updateExpandedCommandCenter,
+  EXPANDED_COMMAND_CENTER_STYLES,
+} from './components/ExpandedCommandCenter.js';
+
 // DOM element references
 const factionList = document.getElementById('factionList');
 const recentActions = document.getElementById('recentActions');
 const techContainer = document.querySelector('.panel--tech .tech-screen') as HTMLElement | null;
+const commandCenterContainer = document.getElementById('commandCenter');
 const focusCard = document.getElementById('focusCard');
 const startOverlay = document.getElementById('startOverlay');
 const startOptions = document.getElementById('startOptions');
@@ -79,6 +105,18 @@ const eventPanel = document.getElementById('eventPanel');
 const commsLog = document.getElementById('commsLog');
 const gamemasterContainer = document.getElementById('gamemasterPanel');
 const victoryTrackerContainer = document.getElementById('victoryTracker');
+
+// New action panel elements
+const advanceQuarterBtn = document.getElementById('advanceQuarter');
+const actionsTurnLabel = document.getElementById('actionsTurnLabel');
+const actionsTurnNum = document.getElementById('actionsTurnNum');
+const directiveInput = document.getElementById('directiveInput') as HTMLInputElement | null;
+const askGamemasterBtn = document.getElementById('askGamemaster');
+const eventBadge = document.getElementById('eventBadge');
+const eventBadgeCount = document.getElementById('eventBadgeCount');
+const resetGameBtn = document.getElementById('resetGame');
+const showStatsBtn = document.getElementById('showStats');
+const showShortcutsBtn = document.getElementById('showShortcuts');
 
 // Victory tracker state
 let victoryTrackerCollapsed = false;
@@ -128,6 +166,11 @@ let gamemasterChatHistory: ChatMessage[] = [];
 let gamemasterNarrative = '';
 let gamemasterLoading = false;
 let gamemasterPanelElement: HTMLElement | null = null;
+
+// Modal instances
+let eventModalInstance: EventModal | null = null;
+let gamemasterModalOverlay: HTMLElement | null = null;
+let techTreeModalInstance: TechTreeModal | null = null;
 
 // Use tabbed view by default (can be toggled with URL param ?simple=1)
 const useSimpleTechTree = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('simple') === '1';
@@ -285,9 +328,8 @@ const handleTechResearch = (techId: string): void => {
 
   // Check if we can afford it
   const branchProgress = faction.research[tech.branch] || 0;
-  const cost = Math.max(0, tech.cost - Math.floor(branchProgress / 10));
 
-  if (branchProgress >= cost * 10) {
+  if (branchProgress >= tech.cost) {
     // Unlock the tech
     faction.unlockedTechs.add(techId);
 
@@ -305,12 +347,12 @@ const handleTechResearch = (techId: string): void => {
     }
 
     // Deduct cost from branch progress
-    faction.research[tech.branch] = Math.max(0, branchProgress - cost * 10);
+    faction.research[tech.branch] = Math.max(0, branchProgress - tech.cost);
 
     state.log.push(`${faction.name} unlocked ${tech.name}`);
     render(state);
   } else {
-    state.log.push(`Not enough ${tech.branch} research points (need ${cost * 10}, have ${branchProgress})`);
+    state.log.push(`Not enough ${tech.branch} research points (need ${tech.cost}, have ${Math.floor(branchProgress)})`);
     render(state);
   }
 };
@@ -386,7 +428,31 @@ const formatEffectPreview = (effects: EventEffect[]): string => {
   return parts.join(' · ');
 };
 
+// Initialize event modal
+const initEventModal = (): void => {
+  if (eventModalInstance) return;
+
+  eventModalInstance = new EventModal({
+    onChoice: (choiceId: string) => {
+      if (!pendingEvent) return;
+      resolveEventChoice(choiceId);
+    },
+  });
+};
+
 const renderEventPanel = (): void => {
+  // Update event badge in action panel
+  updateActionsPanelUI();
+
+  // Ensure modal is initialized
+  initEventModal();
+
+  // If there's a pending event, show the modal
+  if (pendingEvent && eventModalInstance && !eventModalInstance.isOpen()) {
+    eventModalInstance.open(pendingEvent);
+  }
+
+  // Also update the inline panel if it exists (for legacy support)
   if (!eventPanel) return;
   if (!pendingEvent) {
     eventPanel.innerHTML = '<div class="event-panel__empty">No active events.</div>';
@@ -673,42 +739,21 @@ const setActiveOrderRow = (index: number) => {
   renderOrdersSection();
 };
 
-// Render the global dashboard header using the new component
+// Update topbar status indicators without replacing the structure
 const renderHeader = (state: GameState): void => {
   if (!headerElement) return;
 
-  const canAdvance = campaignStarted && !state.gameOver && !pendingEvent;
-  const advanceLabel = !campaignStarted
-    ? 'Select Faction'
-    : pendingEvent
-      ? 'Resolve Event'
-      : state.gameOver
-        ? 'Campaign Ended'
-        : 'Advance Quarter';
+  // Update turn label
+  const turnLabel = document.getElementById('turnLabel');
+  if (turnLabel) turnLabel.textContent = `${state.year} Q${state.quarter}`;
 
-  const dashboardState = {
-    globalSafety: state.globalSafety,
-    year: state.year,
-    quarter: state.quarter,
-    turn: (state.year - 2026) * 4 + state.quarter,
-    tension: getTension(state),
-    agiClock: getAgiClock(state),
-    canAdvance,
-    advanceLabel,
-  };
+  // Update global safety
+  const safetyEl = document.getElementById('globalSafety');
+  if (safetyEl) safetyEl.textContent = String(Math.round(state.globalSafety));
 
-  const dashboard = renderGlobalDashboard(
-    dashboardState,
-    advance,
-    reset,
-    {
-      safetyThreshold: 60,
-      startYear: 2026,
-      endYear: 2033,
-    }
-  );
-
-  headerElement.replaceChildren(dashboard);
+  // Update tension
+  const tensionEl = document.getElementById('tension');
+  if (tensionEl) tensionEl.textContent = getTension(state);
 };
 
 const renderEndgameOverlay = (state: GameState): void => {
@@ -782,7 +827,7 @@ const renderEndgameOverlay = (state: GameState): void => {
 const render = (state: GameState): void => {
   renderHeader(state);
   renderFactions(state);
-  renderTechScreen();
+  renderCommandCenter(); // Command Center is now the main panel
   renderLog(state);
   renderFocusCard(state);
   renderVictoryTrackerUI(state);
@@ -790,6 +835,17 @@ const render = (state: GameState): void => {
   renderCommsPanel();
   renderGamemasterPanelUI();
   renderEndgameOverlay(state);
+
+  // Update tech tree modal if open
+  if (techTreeModalInstance?.isOpen()) {
+    const faction = state.factions[playerFactionId];
+    if (faction) {
+      techTreeModalInstance.update(faction, {
+        activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
+        selectedTechId: selectedTechId,
+      });
+    }
+  }
 };
 
 // Read player orders from the state (maintained by the OrdersPanel component)
@@ -864,6 +920,20 @@ const triggerEvent = async (): Promise<void> => {
   playEvent(); // Sound for new event
   pendingEventChoices = new Map();
 
+  // Gamemaster introduces the event (D&D DM style)
+  gamemaster.introduceEvent(event, state, playerFactionId).then((intro) => {
+    gamemasterNarrative = intro;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: intro, timestamp: Date.now() },
+    ];
+    renderGamemasterPanelUI();
+  }).catch(() => {
+    // Fallback: use event description directly
+    gamemasterNarrative = `${event.title} — ${event.description}`;
+    renderGamemasterPanelUI();
+  });
+
   const aiFactions = Object.keys(state.factions).filter((id) => id !== playerFactionId);
   const choices = await Promise.all(
     aiFactions.map(async (id) => ({
@@ -904,6 +974,19 @@ const advance = async (): Promise<void> => {
     gamemaster.recordEvent({
       turn: state.turn,
       type: 'turn_advanced',
+    });
+
+    // Gamemaster narrates the turn (D&D DM style turn summary)
+    const turnLog = [...state.log];
+    gamemaster.narrateTurnSummary(state, playerFactionId, turnLog).then((summary) => {
+      gamemasterNarrative = summary;
+      gamemasterChatHistory = [
+        ...gamemasterChatHistory,
+        { role: 'assistant' as const, content: summary, timestamp: Date.now() },
+      ];
+      renderGamemasterPanelUI();
+    }).catch(() => {
+      // Keep existing narrative on error
     });
 
     // Play victory/defeat sounds and record statistics
@@ -1043,34 +1126,245 @@ const bindFocusHandlers = () => {
   // The onFocusChange callback is passed to renderFactionList
 };
 
-// Tab switching for main screens
+// Tab switching for main screens (DEPRECATED - tabs removed in new layout)
 let activeMainTab = 'actions';
 
 const bindTabHandlers = () => {
-  const tabContainer = document.getElementById('mainTabs');
-  if (!tabContainer) return;
+  // Tabs have been removed in the new fixed layout
+  // This function is kept for backward compatibility but does nothing
+};
 
-  tabContainer.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
-    if (!target.classList.contains('main-tabs__tab')) return;
+// Bind action panel handlers for the new fixed layout
+// NOTE: Most action panel handlers are now in the ExpandedCommandCenter component callbacks
+const bindActionsPanelHandlers = () => {
+  // Legacy handlers - these elements no longer exist in the new 2-column layout
+  // All actions are now handled by the ExpandedCommandCenter component callbacks
+  // Keeping this function for initialization order compatibility
+};
 
-    const tabId = target.dataset.tab;
-    if (!tabId) return;
+// Open the Gamemaster modal
+const openGamemasterModal = (): void => {
+  if (gamemasterModalOverlay) return; // Already open
 
-    // Update active tab state
-    activeMainTab = tabId;
+  gamemasterModalOverlay = showGamemasterModal({
+    state,
+    chatHistory: gamemasterChatHistory as GMChatMessage[],
+    isLoading: gamemasterLoading,
+    factionId: playerFactionId,
+    onSendMessage: async (message: string) => {
+      // Add user message to history
+      gamemasterChatHistory.push({ role: 'user', content: message, timestamp: Date.now() });
+      gamemasterLoading = true;
+      updateGamemasterModalState();
 
-    // Update tab buttons
-    tabContainer.querySelectorAll('.main-tabs__tab').forEach(tab => {
-      tab.classList.toggle('is-active', tab === target);
-    });
+      try {
+        // Get response from gamemaster using askQuestion
+        const response = await gamemaster.askQuestion(message, state);
+        gamemasterChatHistory.push({ role: 'assistant', content: response, timestamp: Date.now() });
+      } catch (error) {
+        gamemasterChatHistory.push({
+          role: 'assistant',
+          content: 'I apologize, but I encountered an error. Please try again.',
+          timestamp: Date.now(),
+        });
+      }
 
-    // Update screen visibility
-    document.querySelectorAll('.main-screen').forEach(screen => {
-      const screenId = screen.id.replace('screen-', '');
-      screen.classList.toggle('is-active', screenId === tabId);
-    });
+      gamemasterLoading = false;
+      updateGamemasterModalState();
+    },
+    onQuickAction: async (action: GMQuickActionType) => {
+      gamemasterLoading = true;
+      updateGamemasterModalState();
+
+      try {
+        let response: string;
+        switch (action) {
+          case 'what-should-i-do':
+            gamemasterChatHistory.push({ role: 'user', content: 'What should I focus on this turn?', timestamp: Date.now() });
+            response = await gamemaster.getStrategicAdvice(state, playerFactionId);
+            break;
+          case 'explain-safety':
+            gamemasterChatHistory.push({ role: 'user', content: 'Explain how safety works in this game.', timestamp: Date.now() });
+            response = await gamemaster.explainMechanics('safety');
+            break;
+          case 'explain-capability':
+            gamemasterChatHistory.push({ role: 'user', content: 'Explain how capability progression works.', timestamp: Date.now() });
+            response = await gamemaster.explainMechanics('capability');
+            break;
+          case 'get-summary':
+            gamemasterChatHistory.push({ role: 'user', content: 'Give me a summary of the current game state.', timestamp: Date.now() });
+            response = await gamemaster.getGameSummary(state);
+            break;
+          default:
+            response = 'I do not understand that request.';
+        }
+        gamemasterChatHistory.push({ role: 'assistant', content: response, timestamp: Date.now() });
+      } catch (error) {
+        gamemasterChatHistory.push({
+          role: 'assistant',
+          content: 'I apologize, but I encountered an error. Please try again.',
+          timestamp: Date.now(),
+        });
+      }
+
+      gamemasterLoading = false;
+      updateGamemasterModalState();
+    },
+    onClose: () => {
+      closeGamemasterModal();
+    },
   });
+};
+
+// Close the Gamemaster modal
+const closeGamemasterModal = (): void => {
+  if (gamemasterModalOverlay) {
+    hideGamemasterModal(gamemasterModalOverlay);
+    gamemasterModalOverlay = null;
+  }
+};
+
+// Update the Gamemaster modal with current state
+const updateGamemasterModalState = (): void => {
+  if (gamemasterModalOverlay) {
+    updateGamemasterModal(gamemasterModalOverlay, {
+      chatHistory: gamemasterChatHistory as GMChatMessage[],
+      isLoading: gamemasterLoading,
+      state,
+    });
+  }
+};
+
+// Open the Tech Tree modal
+const openTechTreeModal = (): void => {
+  if (techTreeModalInstance?.isOpen()) return; // Already open
+
+  const faction = state.factions[playerFactionId];
+  if (!faction) return;
+
+  if (!techTreeModalInstance) {
+    techTreeModalInstance = new TechTreeModal({
+      onClose: closeTechTreeModal,
+      onResearch: handleTechResearch,
+    });
+  }
+
+  techTreeModalInstance.open(faction, {
+    activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
+    selectedTechId: selectedTechId,
+  });
+};
+
+// Close the Tech Tree modal
+const closeTechTreeModal = (): void => {
+  if (techTreeModalInstance?.isOpen()) {
+    techTreeModalInstance.close();
+  }
+};
+
+// Toggle the Tech Tree modal
+const toggleTechTreeModal = (): void => {
+  if (techTreeModalInstance?.isOpen()) {
+    closeTechTreeModal();
+  } else {
+    openTechTreeModal();
+  }
+};
+
+// Render the Command Center
+const renderCommandCenter = (): void => {
+  if (!commandCenterContainer) return;
+
+  const commandCenter = renderExpandedCommandCenter(
+    {
+      gameState: state,
+      playerFactionId,
+      campaignStarted,
+      hasPendingEvent: !!pendingEvent,
+      pendingEventCount: pendingEvent ? 1 : 0,
+      directiveText: narrativeDirective,
+      recentLog: state.log.slice(-5),
+    },
+    {
+      onAdvanceTurn: () => {
+        if (campaignStarted && !state.gameOver && !pendingEvent) {
+          advance();
+        }
+      },
+      onDirectiveSubmit: (text: string) => {
+        narrativeDirective = text;
+        state.log.push(`Directive: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+        render(state);
+      },
+      onOpenTechTree: openTechTreeModal,
+      onOpenGamemaster: openGamemasterModal,
+      onEventClick: () => {
+        if (pendingEvent && eventModalInstance && !eventModalInstance.isOpen()) {
+          eventModalInstance.open(pendingEvent);
+        }
+      },
+      onReset: () => {},
+      onStats: () => {},
+      onHelp: () => {},
+      onSuggestedAction: (responseText: string) => {
+        narrativeDirective = responseText;
+        render(state);
+      },
+    }
+  );
+
+  commandCenterContainer.replaceChildren(commandCenter);
+};
+
+// Event delegation for advance button (backup for when addEventListener gets lost on re-render)
+if (commandCenterContainer) {
+  commandCenterContainer.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('command-center__advance-btn') && !target.hasAttribute('disabled')) {
+      if (campaignStarted && !state.gameOver && !pendingEvent) {
+        advance();
+      } else if (pendingEvent && eventModalInstance && !eventModalInstance.isOpen()) {
+        eventModalInstance.open(pendingEvent);
+      }
+    }
+  });
+}
+
+// Update action panel UI state
+const updateActionsPanelUI = () => {
+  // Update turn label
+  if (actionsTurnLabel) {
+    actionsTurnLabel.textContent = `${state.year} Q${state.quarter}`;
+  }
+
+  // Update turn number
+  if (actionsTurnNum) {
+    const turn = (state.year - 2026) * 4 + state.quarter;
+    actionsTurnNum.textContent = `Turn ${turn}`;
+  }
+
+  // Update advance button state
+  if (advanceQuarterBtn) {
+    const canAdvance = campaignStarted && !state.gameOver && !pendingEvent;
+    (advanceQuarterBtn as HTMLButtonElement).disabled = !canAdvance;
+    advanceQuarterBtn.textContent = !campaignStarted
+      ? 'Select Faction'
+      : pendingEvent
+        ? 'Resolve Event'
+        : state.gameOver
+          ? 'Campaign Ended'
+          : 'Advance Quarter';
+  }
+
+  // Update event badge
+  if (eventBadge && eventBadgeCount) {
+    if (pendingEvent) {
+      eventBadge.classList.remove('is-hidden');
+      eventBadgeCount.textContent = '1';
+    } else {
+      eventBadge.classList.add('is-hidden');
+    }
+  }
 };
 
 const renderStartOverlay = () => {
@@ -1098,7 +1392,7 @@ const renderStartOverlay = () => {
     startOptions.appendChild(option);
   }
 
-  startGameButton.onclick = () => {
+  startGameButton.onclick = async () => {
     campaignStarted = true;
     startOverlay.classList.add('is-hidden');
     endgameOverlay?.classList.add('is-hidden');
@@ -1108,6 +1402,26 @@ const renderStartOverlay = () => {
 
     // Record game start for statistics
     recordGameStart(playerFactionId);
+
+    // Generate opening narration from the Gamemaster (D&D-style intro)
+    gamemasterLoading = true;
+    renderGamemasterPanelUI();
+    try {
+      const openingNarration = await gamemaster.generateOpeningNarration(state, playerFactionId);
+      gamemasterNarrative = openingNarration;
+      gamemasterChatHistory = [
+        ...gamemasterChatHistory,
+        { role: 'assistant' as const, content: openingNarration, timestamp: Date.now() },
+      ];
+    } catch {
+      gamemasterNarrative = `The year is ${state.year}. The race for AGI has begun. Choose your path wisely.`;
+      gamemasterChatHistory = [
+        ...gamemasterChatHistory,
+        { role: 'assistant' as const, content: gamemasterNarrative, timestamp: Date.now() },
+      ];
+    }
+    gamemasterLoading = false;
+    renderGamemasterPanelUI();
 
     // Start tutorial for new players
     if (!hasTutorialCompleted()) {
@@ -1138,7 +1452,7 @@ const createShortcutsOverlay = (): HTMLElement => {
         <div class="shortcut-row"><kbd>F5</kbd><span>Save manager</span></div>
         <div class="shortcut-row"><kbd>Tab</kbd><span>Statistics</span></div>
         <div class="shortcut-row"><kbd>R</kbd><span>Reset game</span></div>
-        <div class="shortcut-row"><kbd>T</kbd><span>Restart tutorial</span></div>
+        <div class="shortcut-row"><kbd>T</kbd><span>Open Tech Tree</span></div>
         <div class="shortcut-row"><kbd>M</kbd><span>Toggle sound</span></div>
         <div class="shortcut-row"><kbd>G</kbd><span>Cycle game speed</span></div>
         <div class="shortcut-row"><kbd>B</kbd><span>Toggle light/dark theme</span></div>
@@ -1186,6 +1500,11 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
   // Escape to close overlays
   if (key === 'escape') {
     event.preventDefault();
+    // Close tech tree modal first if open
+    if (techTreeModalInstance?.isOpen()) {
+      closeTechTreeModal();
+      return;
+    }
     if (shortcutsOverlayVisible) {
       toggleShortcutsOverlay();
       return;
@@ -1193,7 +1512,6 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
     // Deselect tech
     if (selectedTechId) {
       selectedTechId = null;
-      renderTechScreen();
     }
     return;
   }
@@ -1283,8 +1601,7 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
 
     case 't':
       event.preventDefault();
-      resetTutorial();
-      startTutorial();
+      toggleTechTreeModal();
       break;
 
     case 'b':
@@ -1331,6 +1648,25 @@ const toggleTheme = (): void => {
   localStorage.setItem('agi-race-theme', isLight ? 'light' : 'dark');
 };
 
+// Inject Command Center and Tech Tree Modal styles
+const injectCommandCenterStyles = (): void => {
+  // Inject Tech Tree Modal styles
+  if (!document.getElementById('tech-tree-modal-styles')) {
+    const techTreeStyle = document.createElement('style');
+    techTreeStyle.id = 'tech-tree-modal-styles';
+    techTreeStyle.textContent = TECH_TREE_MODAL_STYLES;
+    document.head.appendChild(techTreeStyle);
+  }
+
+  // Inject Expanded Command Center styles
+  if (!document.getElementById('expanded-command-center-styles')) {
+    const commandCenterStyle = document.createElement('style');
+    commandCenterStyle.id = 'expanded-command-center-styles';
+    commandCenterStyle.textContent = EXPANDED_COMMAND_CENTER_STYLES;
+    document.head.appendChild(commandCenterStyle);
+  }
+};
+
 // Expose theme toggle to window for keyboard shortcut
 declare global {
   interface Window {
@@ -1340,8 +1676,38 @@ declare global {
 window.toggleTheme = toggleTheme;
 
 initTheme();
+
+// Wire up gear menu
+const gearMenuBtn = document.getElementById('gearMenuBtn');
+const gearMenu = document.getElementById('gearMenu');
+if (gearMenuBtn && gearMenu) {
+  gearMenuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    gearMenu.classList.toggle('is-open');
+  });
+  document.addEventListener('click', () => gearMenu.classList.remove('is-open'));
+  document.getElementById('gearReset')?.addEventListener('click', () => {
+    gearMenu.classList.remove('is-open');
+    if (confirm('Reset the game? All progress will be lost.')) {
+      reset();
+    }
+  });
+  document.getElementById('gearStats')?.addEventListener('click', () => {
+    gearMenu.classList.remove('is-open');
+    showStatistics();
+  });
+  document.getElementById('gearKeys')?.addEventListener('click', () => {
+    gearMenu.classList.remove('is-open');
+    toggleShortcutsOverlay();
+  });
+}
+
+injectGamemasterModalStyles(); // Inject modal styles
+injectCommandCenterStyles(); // Inject command center and tech tree modal styles
+initEventModal(); // Initialize event modal
 bindFocusHandlers();
 bindTabHandlers();
+bindActionsPanelHandlers();
 bindPlayerFactionHandler();
 renderStartOverlay();
 renderPlayerControls();

@@ -1,5 +1,5 @@
 import { ACTIONS } from '../data/actions.js';
-import { ACTION_POINTS_PER_TURN, DETECTION, GOVERNMENT_VICTORY, MAX_TURN, OPENNESS_MULTIPLIERS, SAFETY_THRESHOLDS } from './constants.js';
+import { ACTION_POINTS_PER_TURN, DETECTION, ESPIONAGE, GOVERNMENT_VICTORY, MAX_TURN, OPENNESS_MULTIPLIERS, SAFETY_THRESHOLDS } from './constants.js';
 import { computeGlobalSafety, applyResourceDelta, applyScoreDelta, applyStatDelta, computeResearchGain } from './stats.js';
 import { unlockAvailableTechs } from './tech.js';
 import { clamp } from './utils.js';
@@ -23,33 +23,35 @@ const getAction = (actionId: string): ActionDefinition => {
 
 const applyIncome = (faction: FactionState): void => {
   if (faction.type === 'lab') {
-    // Capital income
-    const income = 4 + faction.resources.trust * 0.04 + faction.resources.influence * 0.02;
+    // Capital income - public opinion now affects funding
+    const opinionBonus = (faction.publicOpinion - 50) * 0.02; // ±1 capital from opinion
+    const income = 4 + faction.resources.trust * 0.04 + faction.resources.influence * 0.02 + opinionBonus;
     faction.resources.capital = clamp(faction.resources.capital + income, 0, 100);
 
-    // Research income - labs get research points each round to enable meaningful progress
-    // Base research income scales with compute and data resources
-    const researchBase = 8; // Base research points per turn
+    // Research income scales with compute, data, and talent
+    const researchBase = 8;
     const computeBonus = faction.resources.compute * 0.08;
     const dataBonus = faction.resources.data * 0.05;
-    const researchIncome = researchBase + computeBonus + dataBonus;
+    const talentBonus = faction.resources.talent * 0.03;
+    const researchIncome = researchBase + computeBonus + dataBonus + talentBonus;
 
     // Distribute research points across branches based on faction focus
-    // Capability-focused labs get more capability RP, safety-focused get more safety RP
     const safetyRatio = faction.safetyScore / (faction.safetyScore + faction.capabilityScore + 1);
     const capabilityRatio = 1 - safetyRatio;
 
     faction.research.capabilities += researchIncome * capabilityRatio * 0.6;
-    faction.research.safety += researchIncome * safetyRatio * 0.4 + 2; // Minimum safety research
-    faction.research.ops += researchIncome * 0.25; // Ops gets remaining research
+    faction.research.safety += researchIncome * safetyRatio * 0.4 + 2;
+    faction.research.ops += researchIncome * 0.25;
+    faction.research.policy += researchIncome * 0.1; // Labs get some policy research too
   } else {
     // Government capital income
     const income = 5 + faction.resources.influence * 0.03 + faction.resources.trust * 0.02;
     faction.resources.capital = clamp(faction.resources.capital + income, 0, 100);
 
-    // Governments get policy research income
+    // Governments get policy and safety research income
     const policyIncome = 5 + faction.resources.influence * 0.05;
     faction.research.policy += policyIncome;
+    faction.research.safety += 2 + faction.resources.trust * 0.02; // Govs contribute to safety research
   }
 };
 
@@ -78,31 +80,87 @@ const resolveResearch = (faction: FactionState, action: ActionDefinition, openne
 const resolveEspionage = (
   attacker: FactionState,
   target: FactionState | undefined,
+  state: GameState,
   rng: () => number,
   log: string[],
 ): void => {
   if (!target || target.id === attacker.id) return;
+
+  // Success scales with attacker opsec vs target security level
   const successChance = clamp(
     0.05,
     0.85,
-    0.35 + attacker.opsec * 0.002 - target.opsec * 0.004,
+    ESPIONAGE.baseSuccess + attacker.opsec * ESPIONAGE.opsecAttackFactor - target.opsec * ESPIONAGE.opsecDefenseFactor - target.securityLevel * 0.04,
   );
 
   if (rng() < successChance) {
+    // Steal from highest-value branch
     const targetBranches = Object.entries(target.research).sort((a, b) => b[1] - a[1]);
     const [branch] = targetBranches[0];
-    const stolen = Math.min(12, target.research[branch as keyof typeof target.research]);
+    const stolen = Math.min(12 + attacker.opsec * 0.1, target.research[branch as keyof typeof target.research]);
     target.research[branch as keyof typeof target.research] -= stolen;
     attacker.research[branch as keyof typeof attacker.research] += stolen;
-    log.push(`${attacker.name} stole ${stolen.toFixed(1)} research from ${target.name}.`);
+    log.push(`${attacker.name} stole ${stolen.toFixed(1)} ${branch} research from ${target.name}.`);
+
+    // Chance to also steal tech insights (small capability/safety boost)
+    if (rng() < 0.3 && target.capabilityScore > attacker.capabilityScore) {
+      applyScoreDelta(attacker, 'capabilityScore', 2);
+      log.push(`${attacker.name} gained capability insights from ${target.name}'s research.`);
+    }
   }
 
-  const detectionRoll = rng();
-  if (detectionRoll < 0.25) {
+  // Detection scales with target security level
+  const detectionChance = 0.15 + target.securityLevel * 0.05 + target.opsec * 0.002;
+  if (rng() < detectionChance) {
     applyResourceDelta(attacker, { trust: -6, influence: -4 });
     applyResourceDelta(target, { trust: 2 });
-    log.push(`${attacker.name} was caught conducting espionage against ${target.name}.`);
+    // Generate tension between factions
+    raiseTension(state, attacker.id, target.id, 15);
+    // Public opinion hit for the attacker
+    attacker.publicOpinion = clamp(attacker.publicOpinion - 8, 0, 100);
+    log.push(`${attacker.name} was caught spying on ${target.name}! Tensions rise.`);
   }
+};
+
+/** Raise tension between two factions */
+const raiseTension = (state: GameState, factionA: string, factionB: string, amount: number): void => {
+  const key = [factionA, factionB].sort().join(':');
+  const current = state.tensions.get(key) ?? 0;
+  state.tensions.set(key, clamp(current + amount, 0, 100));
+};
+
+/** Get tension between two factions */
+const getTension = (state: GameState, factionA: string, factionB: string): number => {
+  const key = [factionA, factionB].sort().join(':');
+  return state.tensions.get(key) ?? 0;
+};
+
+/** Decay tensions slightly each turn (cool-down) */
+const decayTensions = (state: GameState): void => {
+  for (const [key, value] of state.tensions.entries()) {
+    const decayed = value * 0.92; // 8% decay per turn
+    if (decayed < 1) {
+      state.tensions.delete(key);
+    } else {
+      state.tensions.set(key, decayed);
+    }
+  }
+};
+
+/** Update public opinion based on faction state */
+const updatePublicOpinion = (faction: FactionState, state: GameState): void => {
+  // Safety score improves opinion
+  const safetyPull = (faction.safetyScore - 30) * 0.05;
+  // Trust improves opinion
+  const trustPull = (faction.resources.trust - 50) * 0.03;
+  // High exposure hurts opinion
+  const exposureDrag = -faction.exposure * 0.5;
+  // High capability without safety scares people
+  const safetyGap = faction.capabilityScore - faction.safetyScore;
+  const gapPenalty = safetyGap > 20 ? -(safetyGap - 20) * 0.15 : 0;
+
+  const drift = safetyPull + trustPull + exposureDrag + gapPenalty;
+  faction.publicOpinion = clamp(faction.publicOpinion + drift, 0, 100);
 };
 
 /** Helper to add or retrieve alliance list for a faction */
@@ -175,7 +233,7 @@ const resolveAction = (
       break;
     case 'espionage': {
       const target = choice.targetFactionId ? state.factions[choice.targetFactionId] : undefined;
-      resolveEspionage(faction, target, rng, state.log);
+      resolveEspionage(faction, target, state, rng, state.log);
       break;
     }
     case 'subsidize': {
@@ -364,6 +422,27 @@ export const resolveTurn = (
       state.log.push(`${faction.name} unlocked ${techId}.`);
     }
   }
+
+  // Alliance benefits: allies share small research bonuses
+  for (const [factionId, allies] of state.alliances.entries()) {
+    const faction = state.factions[factionId];
+    if (!faction || allies.length === 0) continue;
+    for (const allyId of allies) {
+      const ally = state.factions[allyId];
+      if (!ally) continue;
+      // Small trust bonus from alliance
+      const tension = getTension(state, factionId, allyId);
+      if (tension < 30) {
+        faction.resources.trust = clamp(faction.resources.trust + 0.5, 0, 100);
+      }
+    }
+  }
+
+  // Update public opinion and decay tensions
+  for (const faction of Object.values(state.factions)) {
+    updatePublicOpinion(faction, state);
+  }
+  decayTensions(state);
 
   state.globalSafety = computeGlobalSafety(state);
 

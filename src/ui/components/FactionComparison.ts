@@ -71,7 +71,7 @@ function createComparisonRadarChart(
       cy,
       r,
       fill: 'none',
-      stroke: 'rgba(255, 255, 255, 0.08)',
+      stroke: 'rgba(0, 0, 0, 0.06)',
       'stroke-width': 1,
     });
     gridGroup.appendChild(circle);
@@ -97,7 +97,7 @@ function createComparisonRadarChart(
       y1: cy,
       x2: end.x,
       y2: end.y,
-      stroke: 'rgba(255, 255, 255, 0.1)',
+      stroke: 'rgba(0, 0, 0, 0.08)',
       'stroke-width': 1,
     });
     axesGroup.appendChild(line);
@@ -112,7 +112,7 @@ function createComparisonRadarChart(
       'dominant-baseline': 'middle',
       fill: 'var(--muted)',
       'font-size': 9,
-      'font-family': 'Space Grotesk, sans-serif',
+      'font-family': 'var(--font), sans-serif',
     });
     text.textContent = labels[i].substring(0, 3).toUpperCase();
     axesGroup.appendChild(text);

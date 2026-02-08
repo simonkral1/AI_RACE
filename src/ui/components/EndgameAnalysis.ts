@@ -457,12 +457,12 @@ function renderTurningPoints(turningPoints: TurningPoint[]): HTMLElement {
 // CSS styles for the component
 export const ENDGAME_ANALYSIS_STYLES = `
 .endgame-analysis {
-  background: var(--panel-bg, #1a1a2e);
-  border-radius: 12px;
+  background: var(--panel-bg, #ffffff);
+  border-radius: 2px;
   padding: 24px;
   max-width: 800px;
   margin: 0 auto;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary, #1a1a1a);
 }
 
 .endgame-analysis--victory {
@@ -479,7 +479,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
   gap: 16px;
   margin-bottom: 24px;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color, #333);
+  border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__icon {
@@ -507,7 +507,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
 .endgame-analysis__subtitle {
   margin: 8px 0 0;
   font-size: 14px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
 }
 
 .endgame-analysis__winner {
@@ -515,13 +515,13 @@ export const ENDGAME_ANALYSIS_STYLES = `
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 2px;
   margin-bottom: 24px;
 }
 
 .endgame-analysis__winner-label {
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
 }
 
 .endgame-analysis__winner-name {
@@ -537,7 +537,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
   margin: 0 0 12px;
   font-size: 16px;
   font-weight: 600;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -549,15 +549,15 @@ export const ENDGAME_ANALYSIS_STYLES = `
 }
 
 .endgame-analysis__stat-card {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 2px;
   padding: 12px;
   text-align: center;
 }
 
 .endgame-analysis__stat-label {
   font-size: 11px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   text-transform: uppercase;
   margin-bottom: 4px;
 }
@@ -577,12 +577,12 @@ export const ENDGAME_ANALYSIS_STYLES = `
 .endgame-analysis__standings td {
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid var(--border-color, #333);
+  border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__standings th {
   font-weight: 600;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   text-transform: uppercase;
   font-size: 11px;
 }
@@ -606,7 +606,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
   align-items: flex-start;
   gap: 8px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--border-color, #333);
+  border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__analysis-item:last-child {
@@ -628,7 +628,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
 }
 
 .endgame-analysis__analysis-item--neutral .endgame-analysis__analysis-icon {
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
 }
 
 .endgame-analysis__timeline {
@@ -643,7 +643,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--border-color, #333);
+  background: var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__timeline-item {
@@ -658,8 +658,8 @@ export const ENDGAME_ANALYSIS_STYLES = `
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--panel-bg, #1a1a2e);
-  border: 2px solid var(--border-color, #333);
+  background: var(--panel-bg, #ffffff);
+  border: 2px solid var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__timeline-item--positive .endgame-analysis__timeline-marker {
@@ -674,7 +674,7 @@ export const ENDGAME_ANALYSIS_STYLES = `
 
 .endgame-analysis__timeline-time {
   font-size: 11px;
-  color: var(--text-secondary, #888);
+  color: var(--text-secondary, #7a7a7a);
   margin-bottom: 4px;
 }
 
@@ -688,12 +688,12 @@ export const ENDGAME_ANALYSIS_STYLES = `
   gap: 16px;
   margin-top: 24px;
   padding-top: 24px;
-  border-top: 1px solid var(--border-color, #333);
+  border-top: 1px solid var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__btn {
   padding: 12px 32px;
-  border-radius: 8px;
+  border-radius: 2px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -712,11 +712,11 @@ export const ENDGAME_ANALYSIS_STYLES = `
 
 .endgame-analysis__btn--secondary {
   background: transparent;
-  color: var(--text-primary, #e0e0e0);
-  border: 1px solid var(--border-color, #333);
+  color: var(--text-primary, #1a1a1a);
+  border: 1px solid var(--border-color, rgba(0,0,0,0.08));
 }
 
 .endgame-analysis__btn--secondary:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.04);
 }
 `;

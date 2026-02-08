@@ -21,12 +21,13 @@ export interface GlobalDashboardOptions {
 }
 
 /**
- * Renders the global dashboard with safety gauge, timeline, and controls
+ * Renders the global dashboard with safety gauge, timeline, and status indicators
+ * Note: Advance/Reset buttons are now in the Command Center
  */
 export function renderGlobalDashboard(
   state: DashboardState,
-  onAdvance: () => void,
-  onReset: () => void,
+  _onAdvance?: () => void,  // Deprecated: now in Command Center
+  _onReset?: () => void,     // Deprecated: now in Command Center
   options: GlobalDashboardOptions = {}
 ): HTMLElement {
   const { safetyThreshold = 60, startYear = 2026, endYear = 2033 } = options;
@@ -92,32 +93,9 @@ export function renderGlobalDashboard(
     centerSection.appendChild(statusRow);
   }
 
-  // Right section: Actions
-  const rightSection = div({ className: 'global-dashboard__right' });
-
-  const advanceBtn = button({
-    id: 'nextTurn',
-    className: 'btn global-dashboard__btn global-dashboard__btn--advance',
-    attrs: { type: 'button', disabled: state.canAdvance === false },
-    text: state.advanceLabel ?? 'Advance Quarter',
-    onClick: onAdvance,
-  });
-
-  const resetBtn = button({
-    id: 'reset',
-    className: 'btn btn--ghost global-dashboard__btn global-dashboard__btn--reset',
-    attrs: { type: 'button' },
-    text: 'Reset',
-    onClick: onReset,
-  });
-
-  rightSection.appendChild(advanceBtn);
-  rightSection.appendChild(resetBtn);
-
-  // Assemble dashboard
+  // Assemble dashboard (buttons removed - now in Command Center)
   wrapper.appendChild(leftSection);
   wrapper.appendChild(centerSection);
-  wrapper.appendChild(rightSection);
 
   return wrapper;
 }

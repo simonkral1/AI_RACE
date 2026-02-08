@@ -46,6 +46,7 @@ export type GamemasterPanelUpdateOptions = {
 const QUICK_ACTIONS: { id: QuickActionType; label: string; icon: string }[] = [
   { id: 'explain-safety', label: 'Explain Safety', icon: '🛡️' },
   { id: 'explain-capability', label: 'Explain Capability', icon: '⚡' },
+  { id: 'explain-actions', label: 'Explain Actions', icon: '📘' },
   { id: 'get-advice', label: 'What Should I Do?', icon: '🎯' },
   { id: 'get-summary', label: 'Game Summary', icon: '📊' },
 ];
@@ -334,8 +335,8 @@ export const injectGamemasterStyles = (): void => {
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: var(--surface-dark, #1a1a2e);
-      border-radius: 8px;
+      background: var(--panel, #ffffff);
+      border-radius: 2px;
       overflow: hidden;
     }
 
@@ -344,8 +345,8 @@ export const injectGamemasterStyles = (): void => {
       align-items: center;
       gap: 8px;
       padding: 12px 16px;
-      background: var(--surface-darker, #16213e);
-      border-bottom: 1px solid var(--border-color, #2d3748);
+      background: var(--bg-warm, #eae7e1);
+      border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
     }
 
     .gm-header__icon {
@@ -355,26 +356,26 @@ export const injectGamemasterStyles = (): void => {
     .gm-header__title {
       font-size: 1rem;
       font-weight: 600;
-      color: var(--text-primary, #e2e8f0);
+      color: var(--ink, #1a1a1a);
     }
 
     .gm-narrative {
       padding: 12px 16px;
-      background: var(--surface-medium, #1e2a3a);
-      border-bottom: 1px solid var(--border-color, #2d3748);
+      background: var(--panel, #ffffff);
+      border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.08));
     }
 
     .gm-narrative__header {
       font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--text-secondary, #a0aec0);
+      color: var(--muted, #7a7a7a);
       margin-bottom: 4px;
     }
 
     .gm-narrative__content {
       font-size: 0.875rem;
-      color: var(--text-primary, #e2e8f0);
+      color: var(--ink, #1a1a1a);
       line-height: 1.5;
       font-style: italic;
     }
@@ -390,7 +391,7 @@ export const injectGamemasterStyles = (): void => {
     }
 
     .gm-chat__empty {
-      color: var(--text-muted, #718096);
+      color: var(--muted, #7a7a7a);
       font-size: 0.875rem;
       text-align: center;
       padding: 24px 16px;
@@ -414,26 +415,26 @@ export const injectGamemasterStyles = (): void => {
       font-size: 0.7rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--text-secondary, #a0aec0);
+      color: var(--muted, #7a7a7a);
     }
 
     .gm-message__content {
       padding: 8px 12px;
-      border-radius: 8px;
+      border-radius: 2px;
       font-size: 0.875rem;
       line-height: 1.5;
       max-width: 85%;
     }
 
     .gm-message--user .gm-message__content {
-      background: var(--accent-color, #3182ce);
+      background: var(--accent-color, #1a3a2a);
       color: white;
       border-bottom-right-radius: 2px;
     }
 
     .gm-message--assistant .gm-message__content {
-      background: var(--surface-medium, #1e2a3a);
-      color: var(--text-primary, #e2e8f0);
+      background: var(--panel, #ffffff);
+      color: var(--ink, #1a1a1a);
       border-bottom-left-radius: 2px;
     }
 
@@ -447,7 +448,7 @@ export const injectGamemasterStyles = (): void => {
     .gm-loading__dot {
       width: 6px;
       height: 6px;
-      background: var(--accent-color, #3182ce);
+      background: var(--accent-color, #1a3a2a);
       border-radius: 50%;
       animation: gm-loading-pulse 1.4s ease-in-out infinite both;
     }
@@ -466,25 +467,25 @@ export const injectGamemasterStyles = (): void => {
       flex-wrap: wrap;
       gap: 6px;
       padding: 8px 16px;
-      border-top: 1px solid var(--border-color, #2d3748);
-      background: var(--surface-dark, #1a1a2e);
+      border-top: 1px solid var(--border-color, rgba(0,0,0,0.08));
+      background: var(--panel, #ffffff);
     }
 
     .gm-quick-btn {
       padding: 6px 10px;
       font-size: 0.75rem;
-      border-radius: 4px;
-      background: var(--surface-medium, #1e2a3a);
-      color: var(--text-secondary, #a0aec0);
-      border: 1px solid var(--border-color, #2d3748);
+      border-radius: 2px;
+      background: var(--panel, #ffffff);
+      color: var(--muted, #7a7a7a);
+      border: 1px solid var(--border-color, rgba(0,0,0,0.08));
       cursor: pointer;
       transition: all 0.15s ease;
     }
 
     .gm-quick-btn:hover:not(:disabled) {
-      background: var(--surface-hover, #2a3f5f);
-      color: var(--text-primary, #e2e8f0);
-      border-color: var(--accent-color, #3182ce);
+      background: var(--bg-warm, #eae7e1);
+      color: var(--ink, #1a1a1a);
+      border-color: var(--accent-color, #1a3a2a);
     }
 
     .gm-quick-btn:disabled {
@@ -496,24 +497,24 @@ export const injectGamemasterStyles = (): void => {
       display: flex;
       gap: 8px;
       padding: 12px 16px;
-      border-top: 1px solid var(--border-color, #2d3748);
-      background: var(--surface-darker, #16213e);
+      border-top: 1px solid var(--border-color, rgba(0,0,0,0.08));
+      background: var(--bg-warm, #eae7e1);
     }
 
     .gm-input {
       flex: 1;
       padding: 8px 12px;
       font-size: 0.875rem;
-      border-radius: 4px;
-      background: var(--surface-dark, #1a1a2e);
-      color: var(--text-primary, #e2e8f0);
-      border: 1px solid var(--border-color, #2d3748);
+      border-radius: 2px;
+      background: var(--panel, #ffffff);
+      color: var(--ink, #1a1a1a);
+      border: 1px solid var(--border-color, rgba(0,0,0,0.08));
       outline: none;
       transition: border-color 0.15s ease;
     }
 
     .gm-input:focus {
-      border-color: var(--accent-color, #3182ce);
+      border-color: var(--accent-color, #1a3a2a);
     }
 
     .gm-input:disabled {
@@ -521,15 +522,15 @@ export const injectGamemasterStyles = (): void => {
     }
 
     .gm-input::placeholder {
-      color: var(--text-muted, #718096);
+      color: var(--muted, #7a7a7a);
     }
 
     .gm-send-btn {
       padding: 8px 16px;
       font-size: 0.875rem;
       font-weight: 500;
-      border-radius: 4px;
-      background: var(--accent-color, #3182ce);
+      border-radius: 2px;
+      background: var(--accent-color, #1a3a2a);
       color: white;
       border: none;
       cursor: pointer;

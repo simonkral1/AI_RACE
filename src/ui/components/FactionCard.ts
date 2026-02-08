@@ -407,6 +407,34 @@ function determineMoodStatus(faction: FactionState): string {
 /**
  * Render a list of faction cards
  */
+/**
+ * Create the player faction header shown at the top of the sidebar
+ */
+function createPlayerHeader(faction: FactionState): HTMLElement {
+  const header = div({ className: 'faction-player-header' });
+
+  const nameEl = div({ className: 'faction-player-header__name', text: faction.name });
+  header.appendChild(nameEl);
+
+  const typeEl = div({
+    className: 'faction-player-header__type',
+    text: getFactionTypeLabel(faction.type),
+  });
+  header.appendChild(typeEl);
+
+  const statEl = div({ className: 'faction-player-header__stat' });
+  const labelEl = span({ className: 'faction-player-header__stat-label', text: 'Capability' });
+  const valueEl = span({
+    className: 'faction-player-header__stat-value',
+    text: String(Math.round(faction.capabilityScore)),
+  });
+  statEl.appendChild(labelEl);
+  statEl.appendChild(valueEl);
+  header.appendChild(statEl);
+
+  return header;
+}
+
 export function renderFactionList(
   factions: FactionState[],
   playerFactionId: string,
@@ -418,7 +446,8 @@ export function renderFactionList(
     showMoodStatus?: boolean;
   }
 ): HTMLElement {
-  const container = div({ className: 'faction-list' });
+  // Return a wrapper that includes the player header + faction list
+  const wrapper = div({ className: 'faction-list-wrapper' });
 
   // Sort factions: player first, then by type (labs before governments)
   const sortedFactions = [...factions].sort((a, b) => {
@@ -430,8 +459,24 @@ export function renderFactionList(
     return a.name.localeCompare(b.name);
   });
 
-  for (const faction of sortedFactions) {
-    const isPlayer = faction.id === playerFactionId;
+  const playerFaction = sortedFactions.find(f => f.id === playerFactionId);
+  const otherFactions = sortedFactions.filter(f => f.id !== playerFactionId);
+
+  // Player faction header
+  if (playerFaction) {
+    wrapper.appendChild(createPlayerHeader(playerFaction));
+  }
+
+  // "OTHER FACTIONS" section label
+  if (otherFactions.length > 0) {
+    const sectionLabel = div({ className: 'faction-section-label', text: 'OTHER FACTIONS' });
+    wrapper.appendChild(sectionLabel);
+  }
+
+  const container = div({ className: 'faction-list' });
+
+  for (const faction of otherFactions) {
+    const isPlayer = false;
     const isFocused = faction.id === focusFactionId;
 
     // Calculate relationship indicators if enabled
@@ -440,7 +485,7 @@ export function renderFactionList(
       : undefined;
 
     // Determine mood status if enabled
-    const moodStatus = options?.showMoodStatus && !isPlayer
+    const moodStatus = options?.showMoodStatus
       ? determineMoodStatus(faction)
       : undefined;
 
@@ -461,7 +506,8 @@ export function renderFactionList(
     container.appendChild(card);
   }
 
-  return container;
+  wrapper.appendChild(container);
+  return wrapper;
 }
 
 /**
@@ -511,8 +557,8 @@ export const FACTION_CARD_CSS = `
   justify-content: space-between;
   align-items: baseline;
   padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.03);
 }
 
 .faction-card__score--capability {
@@ -546,7 +592,7 @@ export const FACTION_CARD_CSS = `
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .exposure-dot--filled {
@@ -576,7 +622,7 @@ export const FACTION_CARD_CSS = `
   padding: 3px 8px;
   background: var(--accent);
   color: #0c130f;
-  border-radius: 4px;
+  border-radius: 2px;
   font-weight: 600;
 }
 
@@ -601,6 +647,6 @@ export const FACTION_CARD_CSS = `
 }
 
 .radar-label {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font), sans-serif;
 }
 `;

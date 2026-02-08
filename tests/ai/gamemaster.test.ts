@@ -32,7 +32,7 @@ describe('Gamemaster AI', () => {
   describe('explainMechanics', () => {
     it('returns explanation for safety topic', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'Safety score determines how aligned your AI systems are. Higher safety means safer AGI deployment.'
+        '{"answer":"Safety score determines how aligned your AI systems are. Higher safety means safer AGI deployment."}'
       );
 
       const explanation = await gamemaster.explainMechanics('safety');
@@ -49,7 +49,7 @@ describe('Gamemaster AI', () => {
 
     it('returns explanation for capability topic', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'Capability score measures how advanced your AI systems are. Race toward AGI wisely.'
+        '{"answer":"Capability score measures how advanced your AI systems are. Race toward AGI wisely."}'
       );
 
       const explanation = await gamemaster.explainMechanics('capability');
@@ -64,12 +64,12 @@ describe('Gamemaster AI', () => {
       const explanation = await gamemaster.explainMechanics('resources');
 
       expect(explanation).toBeTruthy();
-      expect(explanation.length).toBeGreaterThan(0);
+      expect(explanation.toLowerCase()).toContain('unavailable');
     });
 
     it('includes gamemaster personality in explanation', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'Ah, the delicate balance of trust... In this perilous race toward superintelligence, trust is both shield and weapon.'
+        '{"answer":"Ah, the delicate balance of trust... In this perilous race toward superintelligence, trust is both shield and weapon."}'
       );
 
       const explanation = await gamemaster.explainMechanics('trust');
@@ -78,12 +78,39 @@ describe('Gamemaster AI', () => {
       const systemMessage = mockCallLlm.mock.calls[0][0].find((m: any) => m.role === 'system');
       expect(systemMessage?.content).toContain('wise');
     });
+
+    it('falls back when response contains self-referential drafting text', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        'The key points are safety is important. My personality should stay ominous and helpful.'
+      );
+
+      const explanation = await gamemaster.explainMechanics('safety');
+      expect(explanation.toLowerCase()).toContain('unavailable');
+    });
+
+    it('falls back when mechanics reply uses template drafting phrasing', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        'First, define capability. Check the key points: capability measures what AGI can do.'
+      );
+
+      const explanation = await gamemaster.explainMechanics('capability');
+      expect(explanation.toLowerCase()).toContain('unavailable');
+    });
+
+    it('extracts answer field from JSON response envelope', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        '{"answer":"Capability score tracks how advanced your AI systems are."}'
+      );
+
+      const explanation = await gamemaster.explainMechanics('capability');
+      expect(explanation.toLowerCase()).toContain('capability score');
+    });
   });
 
   describe('getStrategicAdvice', () => {
     it('provides advice based on current game state', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'Your safety score is falling behind. Consider investing in alignment research before pushing capabilities further.'
+        '{"answer":"Your safety score is falling behind. Consider investing in alignment research before pushing capabilities further."}'
       );
 
       const advice = await gamemaster.getStrategicAdvice(state);
@@ -93,7 +120,7 @@ describe('Gamemaster AI', () => {
     });
 
     it('includes faction data in prompt', async () => {
-      mockCallLlm.mockResolvedValueOnce('Focus on building compute infrastructure.');
+      mockCallLlm.mockResolvedValueOnce('{"answer":"Focus on building compute infrastructure."}');
 
       await gamemaster.getStrategicAdvice(state, 'us_lab_a');
 
@@ -107,19 +134,27 @@ describe('Gamemaster AI', () => {
       const advice = await gamemaster.getStrategicAdvice(state);
 
       expect(advice).toBeTruthy();
-      // Fallback should mention something about safety or the race
-      expect(advice.toLowerCase()).toMatch(/safety|race|balance/);
+      expect(advice.toLowerCase()).toContain('unavailable');
     });
 
     it('warns about low global safety', async () => {
       state.globalSafety = 30;
       mockCallLlm.mockResolvedValueOnce(
-        'Warning: Global safety is critically low. All factions risk catastrophe if AGI is deployed now.'
+        '{"answer":"Warning: Global safety is critically low. All factions risk catastrophe if AGI is deployed now."}'
       );
 
       const advice = await gamemaster.getStrategicAdvice(state);
 
       expect(advice.toLowerCase()).toContain('safety');
+    });
+
+    it('falls back when response looks like raw state-analysis dump', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        'The year is 2026, quarter 1, turn 0. The factions are OpenBrain, Nexus Labs, DeepCent. Looking at their resources, none can deploy AGI yet.'
+      );
+
+      const advice = await gamemaster.getStrategicAdvice(state, 'us_lab_a');
+      expect(advice.toLowerCase()).toContain('unavailable');
     });
   });
 
@@ -129,7 +164,7 @@ describe('Gamemaster AI', () => {
 
     it('generates dramatic narrative for event', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'The boardroom falls silent as reports flood in. Export controls have tightened overnight, and the compute you counted on may never arrive.'
+        '{"answer":"The boardroom falls silent as reports flood in. Export controls have tightened overnight, and the compute you counted on may never arrive."}'
       );
 
       const narrative = await gamemaster.narrateEvent(testEvent, testChoice);
@@ -139,7 +174,7 @@ describe('Gamemaster AI', () => {
     });
 
     it('includes event title and choice in prompt', async () => {
-      mockCallLlm.mockResolvedValueOnce('A fateful decision was made.');
+      mockCallLlm.mockResolvedValueOnce('{"answer":"A fateful decision was made."}');
 
       await gamemaster.narrateEvent(testEvent, testChoice);
 
@@ -154,7 +189,7 @@ describe('Gamemaster AI', () => {
       const narrative = await gamemaster.narrateEvent(testEvent, testChoice);
 
       expect(narrative).toBeTruthy();
-      expect(narrative).toContain(testEvent.title);
+      expect(narrative.toLowerCase()).toContain('unavailable');
     });
   });
 
@@ -236,7 +271,7 @@ describe('Gamemaster AI', () => {
   describe('getGameSummary', () => {
     it('generates summary of current game state', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'Year 2027 Q2: The race intensifies. US Lab A leads in capabilities while safety concerns mount globally.'
+        '{"answer":"Year 2027 Q2: The race intensifies. US Lab A leads in capabilities while safety concerns mount globally."}'
       );
 
       const summary = await gamemaster.getGameSummary(state);
@@ -248,7 +283,7 @@ describe('Gamemaster AI', () => {
     it('includes turn information in prompt', async () => {
       state.year = 2028;
       state.quarter = 3;
-      mockCallLlm.mockResolvedValueOnce('The year 2028 Q3 marks a turning point.');
+      mockCallLlm.mockResolvedValueOnce('{"answer":"The year 2028 Q3 marks a turning point."}');
 
       await gamemaster.getGameSummary(state);
 
@@ -262,7 +297,7 @@ describe('Gamemaster AI', () => {
       const summary = await gamemaster.getGameSummary(state);
 
       expect(summary).toBeTruthy();
-      expect(summary).toContain(state.year.toString());
+      expect(summary.toLowerCase()).toContain('unavailable');
     });
   });
 
@@ -311,7 +346,7 @@ describe('Gamemaster AI', () => {
       gamemaster.recordEvent({ turn: 2, type: 'event_resolved', eventId: 'alignment_incident', choiceId: 'full_transparency', factionId: 'us_lab_a' });
 
       mockCallLlm.mockResolvedValueOnce(
-        'After weathering supply shocks and an alignment incident, the lab chose transparency...'
+        '{"answer":"After weathering supply shocks and an alignment incident, the lab chose transparency..."}'
       );
 
       const summary = await gamemaster.getGameSummary(state);
@@ -344,7 +379,7 @@ describe('Gamemaster AI', () => {
   describe('askQuestion', () => {
     it('answers free-form questions about the game', async () => {
       mockCallLlm.mockResolvedValueOnce(
-        'Trust represents how much the public and governments believe in your commitment to safety.'
+        '{"answer":"Trust represents how much the public and governments believe in your commitment to safety."}'
       );
 
       const answer = await gamemaster.askQuestion('What does trust do?', state);
@@ -354,12 +389,69 @@ describe('Gamemaster AI', () => {
     });
 
     it('includes game context in question prompt', async () => {
-      mockCallLlm.mockResolvedValueOnce('Based on current standings...');
+      mockCallLlm.mockResolvedValueOnce('{"answer":"Based on current standings..."}');
 
       await gamemaster.askQuestion('Who is winning?', state);
 
       const userMessage = mockCallLlm.mock.calls[0][0].find((m: any) => m.role === 'user');
       expect(userMessage?.content).toContain('globalSafety');
+    });
+
+    it('falls back when model returns reasoning-leak style text', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        'Okay, the player is asking about strategy. Let me think through the game state before answering.'
+      );
+
+      const answer = await gamemaster.askQuestion('What should I do?', state);
+      expect(answer.toLowerCase()).toContain('unavailable');
+    });
+
+    it('keeps useful answer content when mixed with reasoning-style preamble', async () => {
+      mockCallLlm
+        .mockResolvedValueOnce(
+          'Okay, the player is asking what to prioritize. Let me think. Global safety is critically low, so prioritize safety research this quarter and avoid risky capability pushes.'
+        )
+        .mockResolvedValueOnce(
+          '{"answer":"Global safety is critically low, so prioritize safety research this quarter and avoid risky capability pushes."}'
+        );
+
+      const answer = await gamemaster.askQuestion('What should I do?', state);
+      expect(answer.toLowerCase()).toContain('global safety is critically low');
+      expect(answer.toLowerCase()).toContain('prioritize safety research');
+      expect(answer).not.toContain('cannot fully answer');
+    });
+
+    it('removes drafting-style prompt leakage from otherwise useful output', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        'Year is 2026, quarter 1, turn 0. Global safety is 23.8. None can deploy AGI yet. Maybe something like acknowledging the start of the race. Need to keep it under 100 words.'
+      );
+
+      const answer = await gamemaster.askQuestion('What is the current situation?', state);
+      expect(answer.toLowerCase()).toContain('unavailable');
+    });
+
+    it('extracts answer from JSON envelope for free-form question', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        '{"answer":"You should prioritize safety research this quarter while monitoring rivals."}'
+      );
+
+      const answer = await gamemaster.askQuestion('What should I focus on this turn?', state);
+      expect(answer.toLowerCase()).toContain('prioritize safety research');
+    });
+
+    it('falls back when response contains rewrite-draft meta leakage', async () => {
+      mockCallLlm.mockResolvedValueOnce(
+        'Okay, let\'s see. Looking at the draft: "Greetings, strategist. The year is 2026."'
+      );
+
+      const answer = await gamemaster.askQuestion('hi', state);
+      expect(answer.toLowerCase()).toContain('unavailable');
+    });
+
+    it('returns fallback for off-topic questions without calling LLM', async () => {
+      const answer = await gamemaster.askQuestion('what is 10 plus 10', state);
+      expect(answer.toLowerCase()).toContain('unavailable');
+      expect(mockCallLlm).not.toHaveBeenCalled();
     });
   });
 });

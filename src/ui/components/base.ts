@@ -201,5 +201,5 @@ export const BRANCH_COLORS: Record<string, { primary: string; glow: string }> = 
 export const STATUS_COLORS = {
   unlocked: { bg: 'rgba(138, 192, 108, 0.18)', border: 'rgba(138, 192, 108, 0.6)' },
   available: { bg: 'rgba(246, 192, 106, 0.18)', border: 'rgba(246, 192, 106, 0.6)' },
-  locked: { bg: 'rgba(255, 255, 255, 0.04)', border: 'rgba(255, 255, 255, 0.1)' },
+  locked: { bg: 'rgba(0, 0, 0, 0.03)', border: 'rgba(0, 0, 0, 0.08)' },
 };

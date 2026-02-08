@@ -38,7 +38,7 @@ function getPrereqNames(tech: TechNode): string[] {
 // Calculate effective cost based on research progress
 function getTechCost(tech: TechNode, faction: FactionState): number {
   const progress = faction.research[tech.branch] || 0;
-  return Math.max(0, tech.cost - Math.floor(progress / 10));
+  return Math.max(0, tech.cost - Math.floor(progress));
 }
 
 // Format effect for display
@@ -76,7 +76,7 @@ function renderTechNode(
   const status = getTechStatus(tech, faction);
   const cost = getTechCost(tech, faction);
   const branchProgress = faction.research[tech.branch] || 0;
-  const canAfford = branchProgress >= cost * 10;
+  const canAfford = branchProgress >= cost;
   const isSelected = state.selectedTechId === tech.id;
   const isHovered = state.hoveredTechId === tech.id;
 
@@ -131,7 +131,7 @@ function renderTechNode(
   } else if (status === 'available') {
     const costLabel = el('span', {
       className: 'branch-node__cost',
-      text: `${cost * 10} RP`,
+      text: `${cost} RP`,
     });
 
     const researchBtn = button({
@@ -203,7 +203,7 @@ function renderTechDetail(
   const status = getTechStatus(tech, faction);
   const cost = getTechCost(tech, faction);
   const branchProgress = faction.research[tech.branch] || 0;
-  const canAfford = branchProgress >= cost * 10;
+  const canAfford = branchProgress >= cost;
   const tabInfo = getTabInfo(tech.branch);
 
   // Header
@@ -285,7 +285,7 @@ function renderTechDetail(
   if (status === 'unlocked') {
     costContent.innerHTML = '<span class="branch-detail__completed">Already researched</span>';
   } else {
-    const requiredRP = cost * 10;
+    const requiredRP = cost;
     const currentRP = branchProgress;
     const progressPercent = Math.min(100, Math.round((currentRP / requiredRP) * 100));
 

@@ -2,6 +2,7 @@ import type { GameState } from '../core/types.js';
 import type { NarrativeDirective } from './narrativeAI.js';
 import { FACTION_TEMPLATES } from '../data/factions.js';
 import { callLlm } from './llmClient.js';
+import { extractJsonSnippet } from './llmParsing.js';
 
 export type DialogueLine = {
   factionId: string;
@@ -41,10 +42,10 @@ const fallbackDialogue = (state: GameState, directives: NarrativeDirective[]): D
 };
 
 const extractJsonArray = (raw: string): DialogueLine[] | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
+  const jsonSnippet = extractJsonSnippet(raw, 'array');
+  if (!jsonSnippet) return null;
   try {
-    const parsed = JSON.parse(trimmed);
+    const parsed = JSON.parse(jsonSnippet);
     if (!Array.isArray(parsed)) return null;
     return parsed
       .map((item) => ({

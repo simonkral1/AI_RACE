@@ -7,6 +7,7 @@ import { TECH_TREE } from '../data/techTree.js';
 import { FACTION_TEMPLATES } from '../data/factions.js';
 import { decideActionsHeuristic } from './decideActions.js';
 import { callLlm, LlmMessage } from './llmClient.js';
+import { extractJsonSnippet } from './llmParsing.js';
 
 export type NarrativeDirective = {
   factionId: string;
@@ -116,21 +117,6 @@ const fallbackDirective = (state: GameState, factionId: string, rng: () => numbe
 const getFactionStrategy = (factionId: string) => {
   const template = FACTION_TEMPLATES.find((item) => item.id === factionId);
   return template?.strategy;
-};
-
-const extractJson = (raw: string): string | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed;
-  const codeFenceMatch = trimmed.match(/```(?:json)?([\s\S]*?)```/i);
-  if (codeFenceMatch?.[1]) {
-    const fenced = codeFenceMatch[1].trim();
-    if (fenced.startsWith('{') && fenced.endsWith('}')) return fenced;
-  }
-  const start = trimmed.indexOf('{');
-  const end = trimmed.lastIndexOf('}');
-  if (start === -1 || end === -1 || end <= start) return null;
-  return trimmed.slice(start, end + 1);
 };
 
 export const generateDirective = async (
@@ -274,7 +260,7 @@ export const resolveNarrativeEffects = async (
 
   const content = await callLlm(messages, { maxTokens: 420, temperature: 0.4, topP: 0.9 });
   if (!content) return null;
-  const json = extractJson(content);
+  const json = extractJsonSnippet(content, 'object');
   if (!json) return null;
   try {
     const parsed = JSON.parse(json) as GmResult;

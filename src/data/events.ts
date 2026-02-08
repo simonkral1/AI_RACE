@@ -66,6 +66,209 @@ export type EventDefinition = {
 export { EXPANDED_EVENTS, selectExpandedEvent, type ExpandedEventDefinition, type EventCategory, type EventCondition };
 
 export const EVENTS: EventDefinition[] = [
+  // ============================================================
+  // OPENING EVENTS - Fire in early turns to set the scene
+  // ============================================================
+  {
+    id: 'the_race_begins',
+    title: 'The Race Begins',
+    description:
+      'It\'s 2026. The world\'s most powerful AI labs are locked in an unprecedented race toward AGI. Governments scramble to keep up. Your faction must decide its opening posture.',
+    weight: 3.0,
+    maxTurn: 2,
+    choices: [
+      {
+        id: 'aggressive_start',
+        label: 'Seize the initiative',
+        description: 'Push hard on capabilities from day one. Speed wins races.',
+        effects: [
+          { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 6 },
+          { kind: 'score', target: 'faction', key: 'safetyScore', delta: -2 },
+          { kind: 'resource', target: 'faction', key: 'compute', delta: -4 },
+        ],
+      },
+      {
+        id: 'safety_foundation',
+        label: 'Build safety foundations',
+        description: 'Invest early in alignment research. The race is a marathon, not a sprint.',
+        effects: [
+          { kind: 'score', target: 'faction', key: 'safetyScore', delta: 6 },
+          { kind: 'research', target: 'faction', branch: 'safety', delta: 12 },
+          { kind: 'resource', target: 'faction', key: 'trust', delta: 3 },
+        ],
+      },
+      {
+        id: 'balanced_approach',
+        label: 'Balanced approach',
+        description: 'Advance steadily on all fronts. Don\'t overcommit early.',
+        effects: [
+          { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 3 },
+          { kind: 'score', target: 'faction', key: 'safetyScore', delta: 3 },
+          { kind: 'resource', target: 'faction', key: 'influence', delta: 2 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'intelligence_briefing',
+    title: 'Intelligence Briefing',
+    description:
+      'Your intelligence team delivers its first comprehensive briefing on rival factions. The competitive landscape is more intense than expected.',
+    weight: 2.5,
+    minTurn: 1,
+    maxTurn: 3,
+    choices: [
+      {
+        id: 'invest_espionage',
+        label: 'Invest in intelligence',
+        description: 'Build out your espionage and counterintelligence capabilities.',
+        effects: [
+          { kind: 'stat', target: 'faction', key: 'opsec', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'capital', delta: -4 },
+          { kind: 'exposure', target: 'faction', delta: -2 },
+        ],
+      },
+      {
+        id: 'share_intel',
+        label: 'Share openly',
+        description: 'Publish your competitive analysis. Transparency builds trust.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'trust', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'influence', delta: 3 },
+        ],
+      },
+      {
+        id: 'focus_inward',
+        label: 'Focus on your own work',
+        description: 'Ignore the competition. Execution beats intelligence.',
+        effects: [
+          { kind: 'research', target: 'faction', branch: 'capabilities', delta: 10 },
+          { kind: 'resource', target: 'faction', key: 'talent', delta: 2 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'first_board_meeting',
+    title: 'First Board Meeting',
+    description:
+      'The board convenes for a pivotal strategy session. Investors want returns. Safety advocates want guardrails. Engineers want to build.',
+    weight: 2.5,
+    minTurn: 1,
+    maxTurn: 3,
+    choices: [
+      {
+        id: 'investor_priority',
+        label: 'Prioritize investors',
+        description: 'Promise aggressive timelines and revenue targets.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'capital', delta: 8 },
+          { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 3 },
+          { kind: 'stat', target: 'faction', key: 'safetyCulture', delta: -2 },
+        ],
+      },
+      {
+        id: 'safety_charter',
+        label: 'Adopt safety charter',
+        description: 'Formalize your commitment to responsible development.',
+        effects: [
+          { kind: 'stat', target: 'faction', key: 'safetyCulture', delta: 4 },
+          { kind: 'score', target: 'faction', key: 'safetyScore', delta: 4 },
+          { kind: 'resource', target: 'faction', key: 'trust', delta: 4 },
+        ],
+      },
+      {
+        id: 'talent_investment',
+        label: 'Invest in talent',
+        description: 'Spend big to recruit the best researchers in the world.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'talent', delta: 6 },
+          { kind: 'resource', target: 'faction', key: 'capital', delta: -6 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'public_awareness_spike',
+    title: 'Public Awareness Spike',
+    description:
+      'A viral AI demo has put artificial intelligence at the center of public discourse. Everyone has an opinion now. Regulators are paying attention.',
+    weight: 2.0,
+    minTurn: 2,
+    maxTurn: 5,
+    choices: [
+      {
+        id: 'ride_the_wave',
+        label: 'Ride the hype',
+        description: 'Use the attention to attract talent and funding.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'capital', delta: 6 },
+          { kind: 'resource', target: 'faction', key: 'talent', delta: 3 },
+          { kind: 'resource', target: 'faction', key: 'trust', delta: -2 },
+        ],
+      },
+      {
+        id: 'responsible_messaging',
+        label: 'Responsible messaging',
+        description: 'Use your platform to educate the public about risks and benefits.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'trust', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'influence', delta: 4 },
+          { kind: 'globalSafety', delta: 2 },
+        ],
+      },
+      {
+        id: 'stay_quiet',
+        label: 'Keep your head down',
+        description: 'Let others take the spotlight. Work in peace.',
+        effects: [
+          { kind: 'stat', target: 'faction', key: 'opsec', delta: 3 },
+          { kind: 'research', target: 'faction', branch: 'capabilities', delta: 8 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'early_compute_race',
+    title: 'Early Compute Race',
+    description:
+      'Cloud providers are offering massive compute deals to lock in early AI customers. The arms race for GPU clusters is heating up.',
+    weight: 2.0,
+    minTurn: 1,
+    maxTurn: 4,
+    choices: [
+      {
+        id: 'go_big',
+        label: 'Go big on compute',
+        description: 'Sign a massive compute deal. Scale is destiny.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'compute', delta: 10 },
+          { kind: 'resource', target: 'faction', key: 'capital', delta: -10 },
+        ],
+      },
+      {
+        id: 'efficiency_play',
+        label: 'Efficiency-first approach',
+        description: 'Invest in algorithmic efficiency rather than raw compute.',
+        effects: [
+          { kind: 'research', target: 'faction', branch: 'capabilities', delta: 12 },
+          { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 3 },
+        ],
+      },
+      {
+        id: 'strategic_reserve',
+        label: 'Build a war chest',
+        description: 'Save capital for when compute really matters.',
+        effects: [
+          { kind: 'resource', target: 'faction', key: 'capital', delta: 6 },
+          { kind: 'resource', target: 'faction', key: 'influence', delta: 2 },
+        ],
+      },
+    ],
+  },
+  // ============================================================
+  // CORE EVENTS - Original events that fire throughout the game
+  // ============================================================
   {
     id: 'supply_shock',
     title: 'Supply Chain Shock',

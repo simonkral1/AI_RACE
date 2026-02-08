@@ -98,7 +98,7 @@ export function renderMiniRadarChart(
     size = 80,
     fillColor = RADAR_COLORS.player.fill,
     strokeColor = RADAR_COLORS.player.stroke,
-    gridColor = 'rgba(255, 255, 255, 0.08)',
+    gridColor = 'rgba(0, 0, 0, 0.06)',
     showLabels = false,
   } = options;
 
@@ -155,7 +155,7 @@ export function renderFogOfWarRadarChart(
 ): SVGSVGElement {
   const {
     size = 80,
-    gridColor = 'rgba(255, 255, 255, 0.06)',
+    gridColor = 'rgba(0, 0, 0, 0.05)',
     showLabels = false,
   } = options;
 

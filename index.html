@@ -27,122 +27,38 @@
       <header class="topbar">
         <div class="brand">
           <div class="brand__title">AGI RACE</div>
-          <div class="brand__subtitle">Quarterly strategy sim · 2026 → 2033</div>
         </div>
         <div class="topbar__status">
           <div class="pill" id="turnLabel">2026 Q1</div>
-          <div class="pill pill--safety">Global Safety <span id="globalSafety">0</span></div>
+          <span class="topbar__sep">·</span>
+          <div class="pill pill--safety">Safety <span id="globalSafety">0</span></div>
+          <span class="topbar__sep">·</span>
           <div class="pill pill--tension">Tension <span id="tension">Low</span></div>
         </div>
         <div class="topbar__actions">
-          <button id="nextTurn" class="btn">Advance Quarter</button>
-          <button id="reset" class="btn btn--ghost">Reset</button>
           <button id="themeToggle" class="btn btn--icon" onclick="window.toggleTheme?.()" title="Toggle theme (B)">
             <span class="theme-icon">◐</span>
           </button>
+          <div class="topbar__gear-btn" id="gearMenuBtn" title="Menu">
+            ⚙
+            <div class="topbar__gear-menu" id="gearMenu">
+              <button class="topbar__gear-menu-item" id="gearReset">Reset Game</button>
+              <button class="topbar__gear-menu-item" id="gearStats">Statistics</button>
+              <button class="topbar__gear-menu-item" id="gearKeys">Keyboard (?)  </button>
+            </div>
+          </div>
         </div>
       </header>
 
-      <main class="layout">
+      <main class="layout layout--two-col">
         <section class="panel panel--factions">
-          <h2>Factions</h2>
           <div id="factionList" class="faction-list"></div>
         </section>
 
-        <section class="panel panel--tech">
-          <h2>Technology Directorate</h2>
-          <div class="tech-screen">
-            <div class="tech-screen__header">
-              <div class="tech-screen__title">AI Technology Atlas</div>
-              <div class="tech-screen__meta" id="techScreenMeta">Player research view</div>
-            </div>
-            <div class="tech-screen__controls">
-              <div id="techTabs" class="tech-screen__tabs"></div>
-              <div class="tech-screen__filters">
-                <input id="techSearch" class="tech-screen__search" type="search" placeholder="Search tech..." />
-                <div class="tech-screen__legend">
-                  <span class="legend legend--unlocked">Unlocked</span>
-                  <span class="legend legend--available">Available</span>
-                  <span class="legend legend--locked">Locked</span>
-                </div>
-              </div>
-            </div>
-            <div id="techProgress" class="tech-screen__progress"></div>
-            <div class="tech-screen__content">
-              <div id="techBoard" class="tech-screen__board"></div>
-              <div id="techDetail" class="tech-screen__detail"></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="panel panel--intel panel--wide">
-          <h2>Command Center</h2>
-
-          <!-- Main tab navigation -->
-          <div class="main-tabs" id="mainTabs">
-            <button class="main-tabs__tab is-active" data-tab="actions">Actions</button>
-            <button class="main-tabs__tab" data-tab="gamemaster">Gamemaster</button>
-            <button class="main-tabs__tab" data-tab="events">Events</button>
-            <button class="main-tabs__tab" data-tab="intel">Intel</button>
-          </div>
-
-          <!-- Tab content areas -->
-          <div class="main-screen is-active" id="screen-actions">
-            <div class="orders">
-              <label class="orders__label">
-                <span>Play As</span>
-                <select id="playerFaction" class="orders__select"></select>
-              </label>
-              <!-- Freeform actions will be rendered here -->
-            </div>
-          </div>
-
-          <div class="main-screen" id="screen-gamemaster">
-            <div id="gamemasterPanel" class="gamemaster-container"></div>
-          </div>
-
-          <div class="main-screen" id="screen-events">
-            <div class="intel-card intel-card--full">
-              <div class="intel-title">Event Briefing</div>
-              <div id="eventPanel" class="event-panel"></div>
-            </div>
-            <div class="intel-card">
-              <div class="intel-title">Recent Actions</div>
-              <ul id="recentActions" class="log"></ul>
-            </div>
-            <div class="intel-card">
-              <div class="intel-title">Interlab Comms</div>
-              <ul id="commsLog" class="log log--comms"></ul>
-            </div>
-          </div>
-
-          <div class="main-screen" id="screen-intel">
-            <div class="intel-grid intel-grid--compact">
-              <div class="intel-card">
-                <div class="intel-title">Focus Dossier</div>
-                <div id="focusCard" class="focus-card"></div>
-              </div>
-              <div class="intel-card intel-card--victory">
-                <div class="intel-title">Victory Conditions</div>
-                <div id="victoryTracker" class="victory-tracker-container"></div>
-              </div>
-              <div class="intel-card">
-                <div class="intel-title">AGI Race Clock</div>
-                <div class="intel-body" id="agiClock">Early phase</div>
-              </div>
-            </div>
-          </div>
+        <section class="panel panel--command-center">
+          <div id="commandCenter" class="command-center-container"></div>
         </section>
       </main>
-
-      <footer class="footer">
-        <div class="footer__left">Build: MVP visual mock · Engine wired for turn simulation</div>
-        <div class="footer__right">
-          <span class="chip">Secret vs Open</span>
-          <span class="chip">Tech Tree</span>
-          <span class="chip">Espionage</span>
-        </div>
-      </footer>
     </div>
   </body>
 </html>

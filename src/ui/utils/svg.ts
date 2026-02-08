@@ -86,7 +86,7 @@ export function createRadarChart(
   const {
     fillColor = 'rgba(138, 192, 108, 0.3)',
     strokeColor = 'rgba(138, 192, 108, 0.8)',
-    gridColor = 'rgba(255, 255, 255, 0.1)',
+    gridColor = 'rgba(0, 0, 0, 0.08)',
     gridLevels = 3,
   } = options;
 
@@ -172,7 +172,7 @@ export function createGauge(
   const {
     safeColor = '#8ac06c',
     dangerColor = '#e26d5a',
-    bgColor = 'rgba(255, 255, 255, 0.1)',
+    bgColor = 'rgba(0, 0, 0, 0.08)',
     thresholdColor = '#f6c06a',
   } = options;
 

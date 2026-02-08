@@ -23,32 +23,35 @@ export type LossType =
   | 'collapse'       // Trust below 20
   | 'coup';          // Government loses control of labs
 
+// Minimum turn before any non-regulatory victory can trigger
+export const MIN_VICTORY_TURN = 20; // No wins before 2031 Q1 - extended for better pacing
+
 // Victory thresholds
 export const VICTORY_THRESHOLDS = {
   safeAgi: {
-    factionSafety: 70,
-    globalSafety: 60,
+    factionSafety: 80,
+    globalSafety: 70,
   },
   dominant: {
-    capabilityLeadPercent: 80,  // Must have 80%+ capability lead over second place
-    minCapability: 75,          // Must have at least this much capability (prevents early trigger)
+    capabilityLeadPercent: 100, // Must have 100%+ capability lead over second place
+    minCapability: 90,          // Must have at least this much capability (prevents early trigger)
   },
   publicTrust: {
-    minTrust: 95,               // Very high trust required
-    minCapability: 60,          // Proxy for "products deployed"
+    minTrust: 97,               // Very high trust required
+    minCapability: 80,          // Proxy for "products deployed"
   },
   regulatory: {
     maxTurn: MAX_TURN,
-    labSafetyMin: 60,
-    globalSafetyMin: 55,
+    labSafetyMin: 65,
+    globalSafetyMin: 60,
   },
   alliance: {
-    minTrust: 85,               // Trust threshold for each ally (raised to prevent early trigger)
-    minAllies: 3,               // Need 3+ factions as allies
-    minInfluence: 95,           // Government needs very high influence
+    minTrust: 93,               // Trust threshold for each ally (very high to prevent early trigger)
+    minAllies: 4,               // Need 4+ factions as allies
+    minInfluence: 120,          // Government needs very high influence
   },
   control: {
-    minInfluence: 98,           // Near-total control (raised to prevent early trigger)
+    minInfluence: 120,          // Near-total control (raised to prevent early trigger)
     labCapabilityMax: 15,       // Labs must be heavily suppressed
   },
   // Loss thresholds
@@ -145,6 +148,11 @@ export function checkVictoryConditions(
   const faction = state.factions[factionId];
   if (!faction) {
     return { victory: false, message: 'Faction not found' };
+  }
+
+  // No victories before minimum turn (except regulatory which has its own turn check)
+  if (state.turn < MIN_VICTORY_TURN && faction.type === 'lab') {
+    return { victory: false, message: `Too early for victory (turn ${state.turn}/${MIN_VICTORY_TURN})` };
   }
 
   // Check based on faction type
@@ -271,10 +279,15 @@ function checkPublicTrustVictory(faction: FactionState): VictoryResult {
  * Check government-specific victory conditions
  */
 function checkGovernmentVictory(state: GameState, faction: FactionState): VictoryResult {
-  // Regulatory Victory
+  // Regulatory Victory (has its own turn check)
   const regulatoryResult = checkRegulatoryVictory(state, faction);
   if (regulatoryResult.victory) {
     return regulatoryResult;
+  }
+
+  // No non-regulatory government victories before minimum turn
+  if (state.turn < MIN_VICTORY_TURN) {
+    return { victory: false, message: `Too early for victory (turn ${state.turn}/${MIN_VICTORY_TURN})` };
   }
 
   // Alliance Victory

@@ -226,7 +226,7 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
     cooldown: 10,
     conditions: [
       { kind: 'minCapability', threshold: 40 },
-      { kind: 'hasTech', techId: 'cap_long_horizon' },
+      { kind: 'hasTech', techId: 'cap_ai_researcher' },
     ],
     choices: [
       {
@@ -269,7 +269,7 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
     cooldown: 12,
     conditions: [
       { kind: 'minCapability', threshold: 55 },
-      { kind: 'hasTech', techId: 'cap_scalable_reasoning' },
+      { kind: 'hasTech', techId: 'cap_agent_swarms' },
     ],
     choices: [
       {
@@ -541,7 +541,7 @@ const SAFETY_EVENTS: ExpandedEventDefinition[] = [
     category: 'safety',
     weight: 0.85,
     cooldown: 7,
-    conditions: [{ kind: 'hasTech', techId: 'safe_interpretability' }],
+    conditions: [{ kind: 'hasTech', techId: 'safe_basic_interp' }],
     choices: [
       {
         id: 'publish_tools',
