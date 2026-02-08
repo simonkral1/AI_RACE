@@ -236,10 +236,13 @@ export class EventModal {
     this.overlay.appendChild(this.modal);
     document.body.appendChild(this.overlay);
 
-    // Trigger entrance animation
+    // Trigger entrance animation - double rAF ensures browser has
+    // painted the initial state before transitioning
     requestAnimationFrame(() => {
-      this.overlay?.classList.add('is-visible');
-      this.modal?.classList.add('is-visible');
+      requestAnimationFrame(() => {
+        this.overlay?.classList.add('is-visible');
+        this.modal?.classList.add('is-visible');
+      });
     });
   }
 
@@ -249,15 +252,21 @@ export class EventModal {
   close(): void {
     if (!this.overlay) return;
 
-    this.overlay.classList.remove('is-visible');
-    this.modal?.classList.remove('is-visible');
+    // Capture references before clearing - prevents race condition
+    // where setTimeout removes a newly-created overlay from open()
+    const overlayToRemove = this.overlay;
+    const modalToRemove = this.modal;
 
-    // Wait for animation to complete before removing
+    overlayToRemove.classList.remove('is-visible');
+    modalToRemove?.classList.remove('is-visible');
+
+    this.overlay = null;
+    this.modal = null;
+    this.currentEvent = null;
+
+    // Wait for animation to complete before removing from DOM
     setTimeout(() => {
-      this.overlay?.remove();
-      this.overlay = null;
-      this.modal = null;
-      this.currentEvent = null;
+      overlayToRemove.remove();
     }, ENTRANCE_DURATION);
   }
 

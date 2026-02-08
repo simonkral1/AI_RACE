@@ -24,7 +24,7 @@ export type LossType =
   | 'coup';          // Government loses control of labs
 
 // Minimum turn before any non-regulatory victory can trigger
-export const MIN_VICTORY_TURN = 20; // No wins before 2031 Q1 - extended for better pacing
+export const MIN_VICTORY_TURN = 24; // No wins before 2032 Q1 - ensures games reach turn 25
 
 // Victory thresholds
 export const VICTORY_THRESHOLDS = {
