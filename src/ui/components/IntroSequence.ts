@@ -34,67 +34,70 @@ interface IntroStep {
 
 const INTRO_STEPS: IntroStep[] = [
   {
-    id: 'welcome',
-    label: 'CLASSIFIED BRIEFING',
+    id: 'opening',
+    label: 'CLASSIFIED — EYES ONLY',
     title: 'The Year is 2026',
     lines: [
-      'Welcome, Director.',
-      'I am your strategic analyst — think of me as your briefing officer for this unfolding crisis.',
-      'What you are about to experience is a simulation of the most consequential race in human history: the race to build Artificial General Intelligence.',
-      'Every quarter, you will make decisions that ripple across labs, governments, and the global stage.',
-      'The question is not whether AGI will arrive — it is whether humanity will survive its arrival.',
+      'The server halls never go dark. Somewhere in Virginia, in Zhongguancun, in a rented warehouse outside Austin — the GPUs run every second of every night.',
+      'They are training something. Something that can read, reason, code, persuade. Something that is getting better every ninety days, without anyone fully understanding why.',
+      'The world\'s governments have called for pauses, signed frameworks, convened summits. None of it has slowed the work by a single training run.',
+      'This is the race nobody chose to start. And nobody knows how to stop it.',
     ],
   },
   {
     id: 'stakes',
-    label: 'THE STAKES',
-    title: 'A World on the Brink',
+    label: 'THE THRESHOLD',
+    title: 'What Happens When It Arrives',
     lines: [
-      'Five factions are locked in a high-stakes contest. Three AI laboratories push the boundaries of capability. Two governments struggle to keep pace with regulation and oversight.',
-      'Each faction has its own resources, strengths, and philosophy about how — or whether — to develop AGI safely.',
-      'Global Safety is the invisible thread holding civilization together. If it drops too low when someone deploys AGI, the result is catastrophe — for everyone.',
-      'Your goal: be the first to deploy safe AGI. Or, if you lead a government, ensure no one deploys it recklessly.',
+      'The experts disagree on almost everything — except this: whoever deploys a genuinely general AI system first will hold an advantage unlike anything in human history.',
+      'Economic dominance. Scientific acceleration. Military edge. The lab or government that gets there first sets the rules for everyone who comes after.',
+      'But there is a second question, quieter and more dangerous: will the system do what its builders intended? A capable AGI deployed without adequate safety work doesn\'t just threaten its creators. It threatens everyone.',
+      'Global Safety is the measure of whether the world is ready. Let it collapse before anyone deploys — and the outcome belongs to no one.',
     ],
   },
   {
-    id: 'factions',
-    label: 'THE PLAYERS',
-    title: 'Know Your Rivals',
+    id: 'players',
+    label: 'THE PRINCIPALS',
+    title: 'Five Factions, One Race',
     lines: [
-      '◈ OpenBrain — A safety-conscious US lab with strong security engineering and a culture of openness. Strong ethics, moderate speed.',
-      '◈ Nexus Labs — The aggressive US competitor. Massive compute, big capital, and a "move fast" philosophy that courts risk.',
-      '◈ DeepCent — China\'s state-backed AI collective. Heavy infrastructure backing, high secrecy, and relentless ambition.',
-      '◈ US Executive — The American government. Wields influence and capital, but lacks direct research capability.',
-      '◈ PRC Executive — China\'s central authority. Maximum security, strategic patience, and an iron grip on domestic AI development.',
+      'Three private laboratories are close enough to the frontier to matter. Two governments have decided they cannot afford to watch from the sidelines.',
+      'They do not share the same ambitions. They do not share the same constraints. Some will publish everything. Some will steal. Some will regulate. Some will simply move faster than caution allows.',
+      'You will lead one of them. The others will pursue their own strategies — negotiating, defecting, spiking global risk if it serves their interests.',
+      'The campaign ends when someone deploys AGI. What happens after depends entirely on whether they were ready.',
+    ],
+  },
+  {
+    id: 'role',
+    label: 'YOUR ROLE',
+    title: 'Director',
+    lines: [
+      'Every quarter you issue a directive — a plain-language instruction to your faction. Research priorities, diplomatic overtures, espionage, public communications. Your words become policy.',
+      'Between directives, events will break: a whistleblower, a hardware embargo, a breakthrough at a rival lab. Each demands a choice.',
+      'You can ask your analyst for strategic counsel at any time. The Tech Tree shows what your researchers can unlock. The world map tracks every faction\'s position in real time.',
+      'One more thing, Director: the mission is not simply to win. It is to win in a way the world survives.',
     ],
   },
   {
     id: 'mechanics',
-    label: 'HOW TO PLAY',
-    title: 'Mechanics Briefing',
+    label: 'OPTIONAL — MECHANICS',
+    title: 'How It Works',
     lines: [
-      'Each turn represents one quarter (3 months). You issue a directive — a free-form instruction to your faction.',
-      'Your directive drives what happens: research breakthroughs, diplomatic manoeuvres, espionage, or public outreach.',
-      'The Tech Tree contains technologies across five branches: Capabilities, Safety, Operations, Hard Power, and Policy. Unlocking techs gives you real advantages.',
-      'Random events will test your judgement. A whistleblower, a hardware shortage, a UN summit — each demands a choice with lasting consequences.',
-      'Watch the three key meters: Capability (how close you are to AGI), Safety (how responsible your approach is), and Global Safety (the world\'s overall resilience).',
-      'When your capability is high enough and your safety checks pass, you can attempt to deploy AGI. But deploy too soon and the world pays the price.',
-    ],
-  },
-  {
-    id: 'tips',
-    label: 'ANALYST ADVICE',
-    title: 'Before You Begin',
-    lines: [
-      'Balance is everything. Pure capability research without safety investment leads to catastrophe.',
-      'Pay attention to Soft Power. Lose the public\'s confidence and your faction collapses — no matter how advanced your technology.',
-      'Events are opportunities in disguise. The "safe" choice isn\'t always the best one.',
-      'You can ask me anything during the game. Click the Analyst button or press G for strategic advice, mechanic explanations, or a summary of the situation.',
-      'Press T to open the Tech Tree. Press Space to advance a turn. Press ? for all keyboard shortcuts.',
-      'Good luck, Director. The future is in your hands.',
+      'Each turn is one quarter (3 months). Issue a directive, then advance. AI factions act autonomously; diplomacy happens between turns.',
+      'Research flows into five branches: Capabilities, Safety, Operations, Hard Power, and Policy. Techs unlock real gameplay advantages — and some require both capability and safety prerequisites.',
+      'Track three key meters: your Capability score (distance to AGI), your Safety score (how safe your deployment will be), and Global Safety (the world\'s overall resilience to AGI risk).',
+      'Deploy AGI only when all three checks pass. Deploying too early ends the campaign badly — for everyone.',
+      'Press T for the Tech Tree. Press G for analyst advice. Press Space to advance a quarter. Press ? for all shortcuts.',
     ],
   },
 ];
+
+const FACTION_DESCRIPTIONS: Record<string, string> = {
+  us_lab_a: 'America\'s foremost safety-focused lab. Your open_research ability lets you publish breakthroughs that build global trust — but also accelerate rivals. Win by reaching AGI first with safety scores that silence every critic.',
+  us_lab_b: 'The aggressive American challenger: superior compute, deep capital reserves, and a move_fast philosophy that treats safety debt as a calculated risk. Sprint to capability dominance before anyone else reaches the threshold.',
+  cn_lab: 'China\'s state-backed AI collective, shielded from scrutiny and backed by unlimited infrastructure. Your state_resources ability bypasses capital constraints — but secrecy erodes soft power. Win by outbuilding everyone, quietly.',
+  us_gov: 'The American government holds more influence than any lab — but no research arm of its own. Your executive_order ability can regulate rivals into slow lanes or flood allies with subsidies. Your victory is a safely governed AGI transition, not a deployment.',
+  cn_gov: 'Beijing\'s central authority: patient, strategic, and willing to use every lever of state power. Your strategic_initiative converts geopolitical tensions into concrete advantages. Win by controlling the global AI order — and choosing who gets to deploy.',
+};
 
 const STORAGE_KEY = 'agi_race_intro_seen';
 
@@ -294,6 +297,7 @@ export class IntroSequence {
                 <span class="intro-faction__type intro-faction__type--${f.type}">${f.type.toUpperCase()}</span>
                 <strong class="intro-faction__name">${f.name}</strong>
               </div>
+              ${FACTION_DESCRIPTIONS[f.id] ? `<p class="intro-faction__desc">${FACTION_DESCRIPTIONS[f.id]}</p>` : ''}
               <div class="intro-faction__stats">
                 ${this.renderFactionBrief(f)}
               </div>
@@ -585,6 +589,13 @@ export const INTRO_SEQUENCE_STYLES = `
 .intro-faction__name {
   font-size: 14px;
   font-weight: 600;
+}
+
+.intro-faction__desc {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+  margin: 0 0 6px;
 }
 
 .intro-faction__stats {

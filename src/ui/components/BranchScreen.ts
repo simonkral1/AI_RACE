@@ -342,6 +342,89 @@ function renderTechDetail(
   return panel;
 }
 
+// ── Left-to-right tier graph layout ──────────────────────────────────────────
+
+const NODE_W = 158;
+const NODE_H = 84;
+const COL_GAP = 72;  // horizontal gap between tiers (space for connectors)
+const ROW_GAP = 10;  // vertical gap between nodes in the same tier
+
+interface GridPos { col: number; row: number; }
+
+function calcGridLayout(nodes: TechNode[], techMap: Map<string, TechNode>): Map<string, GridPos> {
+  const positions = new Map<string, GridPos>();
+  const byDepth = new Map<number, TechNode[]>();
+
+  for (const n of nodes) {
+    const d = getTechDepth(n.id, techMap);
+    if (!byDepth.has(d)) byDepth.set(d, []);
+    byDepth.get(d)!.push(n);
+  }
+
+  for (const depth of Array.from(byDepth.keys()).sort((a, b) => a - b)) {
+    const levelNodes = byDepth.get(depth)!;
+    // Sort within tier by the average row of parents (clusters related nodes vertically)
+    levelNodes.sort((a, b) => {
+      const avgRow = (n: TechNode) => {
+        const rows = n.prereqs
+          .map(p => positions.get(p)?.row ?? 0)
+          .filter((_, i) => n.prereqs[i] !== undefined);
+        return rows.length ? rows.reduce((s, r) => s + r, 0) / rows.length : 0;
+      };
+      return avgRow(a) - avgRow(b);
+    });
+    levelNodes.forEach((n, idx) => positions.set(n.id, { col: depth, row: idx }));
+  }
+
+  return positions;
+}
+
+function buildConnectorSVG(
+  nodes: TechNode[],
+  positions: Map<string, GridPos>,
+  canvasW: number,
+  canvasH: number,
+  faction: FactionState,
+): SVGSVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'branch-tree__svg');
+  svg.setAttribute('width', String(canvasW));
+  svg.setAttribute('height', String(canvasH));
+  svg.setAttribute('aria-hidden', 'true');
+
+  for (const node of nodes) {
+    const childPos = positions.get(node.id);
+    if (!childPos) continue;
+
+    const childX = childPos.col * (NODE_W + COL_GAP);
+    const childY = childPos.row * (NODE_H + ROW_GAP) + NODE_H / 2;
+
+    for (const prereqId of node.prereqs) {
+      const parentPos = positions.get(prereqId);
+      if (!parentPos) continue; // prereq might be in a different branch or filtered out
+
+      const parentX = parentPos.col * (NODE_W + COL_GAP) + NODE_W;
+      const parentY = parentPos.row * (NODE_H + ROW_GAP) + NODE_H / 2;
+
+      const prereqOwned = faction.unlockedTechs.has(prereqId);
+      const nodeOwned = faction.unlockedTechs.has(node.id);
+      const lineClass = nodeOwned
+        ? 'branch-tree__edge branch-tree__edge--active'
+        : prereqOwned
+          ? 'branch-tree__edge branch-tree__edge--available'
+          : 'branch-tree__edge branch-tree__edge--locked';
+
+      const midX = (parentX + childX) / 2;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('class', lineClass);
+      path.setAttribute('d', `M${parentX},${parentY} C${midX},${parentY} ${midX},${childY} ${childX},${childY}`);
+      svg.appendChild(path);
+    }
+  }
+
+  return svg;
+}
+
 // Main branch screen renderer
 export function renderBranchScreen(
   branch: BranchId,
@@ -351,125 +434,101 @@ export function renderBranchScreen(
 ): HTMLElement {
   const container = div({ className: 'branch-screen' });
   const tabInfo = getTabInfo(branch);
-
-  // Set branch color
   container.style.setProperty('--branch-color', tabInfo?.color || '#666');
 
-  // Get techs for this branch
   const branchTechs = TECH_TREE.filter(t => t.branch === branch && isTechAvailableForFaction(t, faction));
   if (branchTechs.length === 0) {
     const empty = div({ className: 'branch-screen__empty' });
     empty.innerHTML = `
       <div class="branch-screen__empty-icon">🏛️</div>
-      <div class="branch-screen__empty-text">No technologies are currently available for this branch.</div>
+      <div class="branch-screen__empty-text">No technologies available for this branch.</div>
     `;
     container.appendChild(empty);
     return container;
   }
+
   const techMap = new Map(TECH_TREE.map(t => [t.id, t]));
+  const positions = calcGridLayout(branchTechs, techMap);
 
-  // Sort by depth (prereq chain length)
-  const sortedTechs = [...branchTechs].sort((a, b) => {
-    return getTechDepth(a.id, techMap) - getTechDepth(b.id, techMap);
-  });
+  const maxCol = Math.max(...Array.from(positions.values()).map(p => p.col));
+  const maxRow = Math.max(...Array.from(positions.values()).map(p => p.row));
 
-  // Calculate branch stats
+  const canvasW = (maxCol + 1) * (NODE_W + COL_GAP) - COL_GAP + 2;
+  const canvasH = (maxRow + 1) * (NODE_H + ROW_GAP) - ROW_GAP + 2;
+
+  // ── Header ─────────────────────────────────────────────────────────────────
   const unlockedCount = branchTechs.filter(t => faction.unlockedTechs.has(t.id)).length;
   const researchPool = getUnifiedResearchPool(faction);
 
-  // Branch header
   const header = div({ className: 'branch-screen__header' });
-
   const headerLeft = div({ className: 'branch-screen__header-left' });
-  const headerIcon = el('span', {
-    className: 'branch-screen__icon',
-    text: tabInfo?.icon || '',
-  });
-  const headerTitle = el('h2', {
-    className: 'branch-screen__title',
-    text: tabInfo?.name || branch,
-  });
-  const headerDesc = el('p', {
-    className: 'branch-screen__desc',
-    text: tabInfo?.description || '',
-  });
-  headerLeft.appendChild(headerIcon);
-  headerLeft.appendChild(headerTitle);
-  headerLeft.appendChild(headerDesc);
+  headerLeft.appendChild(el('span', { className: 'branch-screen__icon', text: tabInfo?.icon || '' }));
+  headerLeft.appendChild(el('h2', { className: 'branch-screen__title', text: tabInfo?.name || branch }));
+  headerLeft.appendChild(el('p', { className: 'branch-screen__desc', text: tabInfo?.description || '' }));
 
   const headerRight = div({ className: 'branch-screen__header-right' });
   const progressStat = div({ className: 'branch-screen__stat' });
-  progressStat.innerHTML = `
-    <span class="branch-screen__stat-label">Progress</span>
-    <span class="branch-screen__stat-value">${unlockedCount}/${branchTechs.length}</span>
-  `;
+  progressStat.innerHTML = `<span class="branch-screen__stat-label">Progress</span><span class="branch-screen__stat-value">${unlockedCount}/${branchTechs.length}</span>`;
   const rpStat = div({ className: 'branch-screen__stat' });
-  rpStat.innerHTML = `
-    <span class="branch-screen__stat-label">Research Pool</span>
-    <span class="branch-screen__stat-value">${Math.floor(researchPool)} RP</span>
-  `;
+  rpStat.innerHTML = `<span class="branch-screen__stat-label">Research Pool</span><span class="branch-screen__stat-value">${Math.floor(researchPool)} RP</span>`;
   headerRight.appendChild(progressStat);
   headerRight.appendChild(rpStat);
-
   header.appendChild(headerLeft);
   header.appendChild(headerRight);
 
-  // Main content area
-  const content = div({ className: 'branch-screen__content' });
-
-  // Tree view (left)
-  const treeView = div({ className: 'branch-screen__tree' });
-
-  // Group techs by depth level
-  const techsByDepth: Map<number, TechNode[]> = new Map();
-  for (const tech of sortedTechs) {
-    const depth = getTechDepth(tech.id, techMap);
-    if (!techsByDepth.has(depth)) {
-      techsByDepth.set(depth, []);
-    }
-    techsByDepth.get(depth)?.push(tech);
+  // ── Tier labels row ────────────────────────────────────────────────────────
+  const tierLabels = div({ className: 'branch-tree__tier-labels' });
+  const depths = Array.from(new Set(Array.from(positions.values()).map(p => p.col))).sort((a, b) => a - b);
+  for (const d of depths) {
+    const label = div({
+      className: 'branch-tree__tier-label',
+      text: d === 0 ? 'Foundation' : `Tier ${d}`,
+      attrs: { style: `width:${NODE_W}px; margin-left:${d === 0 ? 0 : COL_GAP}px` },
+    });
+    tierLabels.appendChild(label);
   }
 
-  // Render each level
-  const depths = Array.from(techsByDepth.keys()).sort((a, b) => a - b);
-  for (const depth of depths) {
-    const levelTechs = techsByDepth.get(depth) || [];
-    const levelEl = div({
-      className: 'branch-screen__level',
-      dataset: { depth: String(depth) },
-    });
+  // ── Canvas with absolutely-positioned nodes + SVG connectors ────────────────
+  const treeScroll = div({ className: 'branch-tree__scroll' });
+  const canvas = div({ className: 'branch-tree__canvas' });
+  canvas.style.width = `${canvasW}px`;
+  canvas.style.height = `${canvasH}px`;
+  canvas.style.position = 'relative';
 
-    // Level label
-    const levelLabel = div({
-      className: 'branch-screen__level-label',
-      text: depth === 0 ? 'Foundation' : `Tier ${depth}`,
-    });
-    levelEl.appendChild(levelLabel);
+  // SVG connector overlay (drawn beneath nodes)
+  const svg = buildConnectorSVG(branchTechs, positions, canvasW, canvasH, faction);
+  svg.style.position = 'absolute';
+  svg.style.top = '0';
+  svg.style.left = '0';
+  svg.style.pointerEvents = 'none';
+  canvas.appendChild(svg);
 
-    // Nodes in this level
-    const nodesContainer = div({ className: 'branch-screen__nodes' });
-    for (const tech of levelTechs) {
-      const nodeEl = renderTechNode(tech, faction, state, callbacks);
-      nodesContainer.appendChild(nodeEl);
-    }
-    levelEl.appendChild(nodesContainer);
-
-    // Connection line to next level (if not last)
-    if (depth < Math.max(...depths)) {
-      const connector = div({ className: 'branch-screen__connector' });
-      levelEl.appendChild(connector);
-    }
-
-    treeView.appendChild(levelEl);
+  // Render nodes
+  for (const tech of branchTechs) {
+    const pos = positions.get(tech.id);
+    if (!pos) continue;
+    const nodeEl = renderTechNode(tech, faction, state, callbacks);
+    nodeEl.style.position = 'absolute';
+    nodeEl.style.left = `${pos.col * (NODE_W + COL_GAP)}px`;
+    nodeEl.style.top = `${pos.row * (NODE_H + ROW_GAP)}px`;
+    nodeEl.style.width = `${NODE_W}px`;
+    canvas.appendChild(nodeEl);
   }
 
-  // Detail panel (right)
+  treeScroll.appendChild(canvas);
+
+  // ── Detail panel ───────────────────────────────────────────────────────────
   const selectedTech = state.selectedTechId
-    ? TECH_TREE.find(t => t.id === state.selectedTechId) || null
+    ? TECH_TREE.find(t => t.id === state.selectedTechId) ?? null
     : null;
   const detailPanel = renderTechDetail(selectedTech, faction, callbacks);
 
-  content.appendChild(treeView);
+  // ── Assemble ────────────────────────────────────────────────────────────────
+  const content = div({ className: 'branch-screen__content' });
+  const treeWrap = div({ className: 'branch-screen__tree' });
+  treeWrap.appendChild(tierLabels);
+  treeWrap.appendChild(treeScroll);
+  content.appendChild(treeWrap);
   content.appendChild(detailPanel);
 
   container.appendChild(header);

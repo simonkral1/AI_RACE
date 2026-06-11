@@ -83,30 +83,62 @@ export const TECH_TREE: TechNode[] = [
     effects: [{ kind: 'capability', delta: 6 }],
   },
 
+  // --- Tier 2: Sub-path nodes ---
+  // Scaling path: long context → compute-optimal training → world models
+  {
+    id: 'cap_compute_optimal_training',
+    name: 'Compute-Optimal Training',
+    branch: 'capabilities',
+    cost: 18,
+    prereqs: ['cap_long_context'],
+    effects: [{ kind: 'capability', delta: 4 }, { kind: 'resource', key: 'compute', delta: 3 }],
+  },
+  // Reasoning path: chain-of-thought → inference-time compute → extended reasoning
+  {
+    id: 'cap_inference_time_compute',
+    name: 'Inference-Time Compute Scaling',
+    branch: 'capabilities',
+    cost: 20,
+    prereqs: ['cap_chain_of_thought'],
+    effects: [{ kind: 'capability', delta: 5 }],
+  },
+
   // --- Tier 3: Integration (cost 30-42) ---
+  // Agents path: coding automation → reliable agent (simplified prereq to keep agents path distinct)
   {
     id: 'cap_reliable_agent',
     name: 'Reliable Agent',
     branch: 'capabilities',
     cost: 35,
-    prereqs: ['cap_coding_automation', 'cap_long_context', 'cap_chain_of_thought'],
+    prereqs: ['cap_coding_automation'],
     effects: [{ kind: 'capability', delta: 7 }],
   },
+  // Reasoning path capstone: requires inference-time compute (not reliable agent)
   {
     id: 'cap_extended_reasoning',
     name: 'Extended Reasoning',
     branch: 'capabilities',
     cost: 32,
-    prereqs: ['cap_reliable_agent'],
+    prereqs: ['cap_inference_time_compute'],
     effects: [{ kind: 'capability', delta: 6 }],
   },
+  // Scaling path capstone: requires compute-optimal training (not reliable agent)
   {
     id: 'cap_world_models',
     name: 'World Models',
     branch: 'capabilities',
     cost: 38,
-    prereqs: ['cap_multimodal', 'cap_reliable_agent'],
+    prereqs: ['cap_multimodal', 'cap_compute_optimal_training'],
     effects: [{ kind: 'capability', delta: 7 }],
+  },
+  // Agents + Multimodal merger node
+  {
+    id: 'cap_multimodal_agents',
+    name: 'Multimodal Agents',
+    branch: 'capabilities',
+    cost: 42,
+    prereqs: ['cap_reliable_agent', 'cap_multimodal'],
+    effects: [{ kind: 'capability', delta: 6 }, { kind: 'resource', key: 'influence', delta: 3 }],
   },
 
   // --- Tier 4: Superhuman (cost 55-75) ---
@@ -118,12 +150,21 @@ export const TECH_TREE: TechNode[] = [
     prereqs: ['cap_extended_reasoning', 'cap_world_models'],
     effects: [{ kind: 'capability', delta: 9 }],
   },
+  // Self-critique closes the reasoning loop before the AGI capstone
+  {
+    id: 'cap_self_critique',
+    name: 'Self-Critique Loops',
+    branch: 'capabilities',
+    cost: 40,
+    prereqs: ['cap_extended_reasoning'],
+    effects: [{ kind: 'capability', delta: 5 }, { kind: 'safety', delta: 3 }],
+  },
   {
     id: 'cap_agent_swarms',
     name: 'Agent Swarms',
     branch: 'capabilities',
     cost: 55,
-    prereqs: ['cap_superhuman_coder'],
+    prereqs: ['cap_superhuman_coder', 'cap_reliable_agent'],
     effects: [{ kind: 'capability', delta: 8 }, { kind: 'resource', key: 'compute', delta: -5 }],
   },
   {
@@ -269,7 +310,19 @@ export const TECH_TREE: TechNode[] = [
     effects: [{ kind: 'safety', delta: 4 }, { kind: 'stat', key: 'opsec', delta: 3 }],
   },
 
+  // --- Tier 2.5: Governance path node ---
+  // Governance path: evals + red teaming → adversarial robustness + sandboxing → staged deployment
+  {
+    id: 'safe_staged_deployment',
+    name: 'Staged Deployment Framework',
+    branch: 'safety',
+    cost: 25,
+    prereqs: ['safe_adversarial_robustness', 'safe_sandboxing'],
+    effects: [{ kind: 'safety', delta: 3 }, { kind: 'resource', key: 'trust', delta: 5 }],
+  },
+
   // --- Tier 3: Deep Safety (cost 30-42) ---
+  // Interpretability path: basic interp → sparse autoencoders → circuit analysis
   {
     id: 'safe_sparse_autoencoders',
     name: 'Sparse Autoencoders',
@@ -278,6 +331,7 @@ export const TECH_TREE: TechNode[] = [
     prereqs: ['safe_basic_interp'],
     effects: [{ kind: 'safety', delta: 7 }],
   },
+  // Alignment path: rlhf → constitutional ai → cot monitoring
   {
     id: 'safe_cot_monitoring',
     name: 'CoT Monitoring',
@@ -286,6 +340,16 @@ export const TECH_TREE: TechNode[] = [
     prereqs: ['safe_constitutional_ai'],
     effects: [{ kind: 'safety', delta: 7 }],
   },
+  // Alignment path capstone: value alignment (req constitutional ai + rlhf)
+  {
+    id: 'safe_value_alignment',
+    name: 'Value Alignment Research',
+    branch: 'safety',
+    cost: 36,
+    prereqs: ['safe_constitutional_ai', 'safe_rlhf'],
+    effects: [{ kind: 'safety', delta: 6 }, { kind: 'stat', key: 'safetyCulture', delta: 2 }],
+  },
+  // Convergence of governance + alignment paths
   {
     id: 'safe_deception_detection',
     name: 'Deception Detection',
@@ -294,6 +358,7 @@ export const TECH_TREE: TechNode[] = [
     prereqs: ['safe_cot_monitoring', 'safe_adversarial_robustness'],
     effects: [{ kind: 'safety', delta: 8 }],
   },
+  // Interpretability path: sparse autoencoders → circuit analysis → feature steering
   {
     id: 'safe_circuit_analysis',
     name: 'Circuit Analysis',
@@ -302,14 +367,24 @@ export const TECH_TREE: TechNode[] = [
     prereqs: ['safe_sparse_autoencoders'],
     effects: [{ kind: 'safety', delta: 7 }],
   },
+  // Interpretability path capstone
+  {
+    id: 'safe_feature_steering',
+    name: 'Feature Steering',
+    branch: 'safety',
+    cost: 38,
+    prereqs: ['safe_circuit_analysis'],
+    effects: [{ kind: 'safety', delta: 8 }, { kind: 'capability', delta: 2 }],
+  },
 
   // --- Tier 4: Advanced Safety (cost 55-75) ---
+  // Convergence of all three paths (interpretability + alignment + governance)
   {
     id: 'safe_scalable_oversight',
     name: 'Scalable Oversight',
     branch: 'safety',
     cost: 58,
-    prereqs: ['safe_deception_detection', 'safe_circuit_analysis'],
+    prereqs: ['safe_deception_detection', 'safe_feature_steering'],
     effects: [{ kind: 'safety', delta: 9 }],
   },
   {

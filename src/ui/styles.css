@@ -3176,6 +3176,72 @@ button:focus-visible,
   border-radius: 1px;
 }
 
+/* Tier-graph layout (left-to-right, absolutely positioned nodes + SVG connectors) */
+.branch-tree__tier-labels {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+  padding: 0 0 6px;
+  flex-shrink: 0;
+}
+
+.branch-tree__tier-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  padding: 2px 0;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.branch-tree__scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  flex: 1;
+  padding-bottom: 12px;
+}
+
+.branch-tree__canvas {
+  /* width and height set inline by JS */
+  min-height: 100px;
+}
+
+.branch-tree__svg {
+  overflow: visible;
+}
+
+.branch-tree__edge {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.branch-tree__edge--active {
+  stroke: var(--branch-color, #4a9a6a);
+  opacity: 0.75;
+}
+
+.branch-tree__edge--available {
+  stroke: var(--branch-color, #4a9a6a);
+  opacity: 0.45;
+  stroke-dasharray: 4 3;
+}
+
+.branch-tree__edge--locked {
+  stroke: var(--line, rgba(0,0,0,0.12));
+  opacity: 0.5;
+  stroke-dasharray: 3 4;
+}
+
+/* Update tree column to be flex-column to hold tier-labels + scroll */
+.branch-screen__tree {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-right: 0;
+}
+
 /* Tech Node */
 .branch-node {
   display: flex;
@@ -3187,9 +3253,7 @@ button:focus-visible,
   border-radius: 2px;
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
-  min-width: 280px;
-  max-width: 360px;
-  flex: 1;
+  box-sizing: border-box;
 }
 
 .branch-node:hover {

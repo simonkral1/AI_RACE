@@ -1,4 +1,4 @@
-import { div, span, el, button, createSvgElement } from './base.js';
+import { div, span, el, button } from './base.js';
 import { renderMiniVictoryBars } from './VictoryTracker.js';
 import type {
   ActionDefinition,
@@ -164,139 +164,6 @@ function getFactionRaceColor(faction: FactionState, isPlayer: boolean): string {
   const mapped = FACTION_RACE_COLORS[faction.id];
   if (mapped) return mapped;
   return faction.type === 'lab' ? '#b4634f' : '#78649a';
-}
-
-type MapPoint = { x: number; y: number };
-
-const FACTION_MAP_POINTS: Record<string, MapPoint> = {
-  us_lab_a: { x: 120, y: 104 },
-  us_lab_b: { x: 142, y: 132 },
-  us_gov: { x: 92, y: 162 },
-  cn_lab: { x: 418, y: 108 },
-  cn_gov: { x: 446, y: 156 },
-};
-
-const tensionKey = (a: string, b: string): string => [a, b].sort().join(':');
-
-const getPairTension = (state: GameState, a: string, b: string): number =>
-  state.tensions.get(tensionKey(a, b)) ?? 0;
-
-const areAllied = (state: GameState, a: string, b: string): boolean => {
-  const listA = state.alliances.get(a) ?? [];
-  const listB = state.alliances.get(b) ?? [];
-  return listA.includes(b) || listB.includes(a);
-};
-
-function createGeopoliticalMap(state: GameState, playerFactionId: string): HTMLElement {
-  const section = div({ className: 'command-center__geo-map' });
-  section.appendChild(createSectionHeader('Geopolitical Map'));
-
-  const svg = createSvgElement('svg', {
-    className: 'command-center__geo-svg',
-    viewBox: '0 0 520 240',
-    role: 'img',
-    'aria-label': 'Geopolitical map',
-  }) as unknown as SVGSVGElement;
-
-  const bg = createSvgElement('g', { className: 'command-center__geo-bg' });
-  bg.appendChild(createSvgElement('path', {
-    className: 'command-center__geo-land',
-    d: 'M25 70 C40 55, 95 55, 120 78 C135 92, 146 124, 132 145 C116 169, 64 178, 36 152 C16 132, 10 92, 25 70 Z',
-  }));
-  bg.appendChild(createSvgElement('path', {
-    className: 'command-center__geo-land',
-    d: 'M200 66 C230 44, 290 46, 316 70 C338 90, 338 126, 312 145 C282 168, 226 170, 200 144 C182 126, 176 88, 200 66 Z',
-  }));
-  bg.appendChild(createSvgElement('path', {
-    className: 'command-center__geo-land',
-    d: 'M348 82 C372 56, 440 56, 476 86 C500 104, 508 136, 490 156 C468 180, 408 186, 372 160 C346 140, 332 108, 348 82 Z',
-  }));
-  bg.appendChild(createSvgElement('path', {
-    className: 'command-center__geo-land command-center__geo-land--south',
-    d: 'M240 168 C264 156, 300 158, 322 172 C344 186, 352 212, 330 224 C300 240, 260 238, 238 220 C222 206, 220 176, 240 168 Z',
-  }));
-  svg.appendChild(bg);
-
-  const ids = Object.keys(state.factions);
-  const links = createSvgElement('g', { className: 'command-center__geo-links' });
-  for (let i = 0; i < ids.length; i++) {
-    for (let j = i + 1; j < ids.length; j++) {
-      const a = ids[i]!;
-      const b = ids[j]!;
-      const pa = FACTION_MAP_POINTS[a];
-      const pb = FACTION_MAP_POINTS[b];
-      if (!pa || !pb) continue;
-
-      const tension = getPairTension(state, a, b);
-      const allied = areAllied(state, a, b);
-      if (!allied && tension < 18) continue;
-
-      const kind = allied ? 'alliance' : 'tension';
-      const opacity = allied ? 0.55 : Math.max(0.18, Math.min(0.9, tension / 100));
-      const line = createSvgElement('line', {
-        className: `command-center__geo-link command-center__geo-link--${kind}`,
-        x1: pa.x,
-        y1: pa.y,
-        x2: pb.x,
-        y2: pb.y,
-        'stroke-opacity': opacity,
-      });
-      const title = createSvgElement('title', {});
-      title.textContent = allied
-        ? `${state.factions[a]?.name ?? a} ↔ ${state.factions[b]?.name ?? b}: Alliance`
-        : `${state.factions[a]?.name ?? a} ↔ ${state.factions[b]?.name ?? b}: Tension ${Math.round(tension)}`;
-      line.appendChild(title);
-      links.appendChild(line);
-    }
-  }
-  svg.appendChild(links);
-
-  const nodes = createSvgElement('g', { className: 'command-center__geo-nodes' });
-  for (const faction of Object.values(state.factions)) {
-    const point = FACTION_MAP_POINTS[faction.id];
-    if (!point) continue;
-    const isPlayer = faction.id === playerFactionId;
-    const group = createSvgElement('g', {
-      className: `command-center__geo-node${isPlayer ? ' command-center__geo-node--player' : ''}`,
-      transform: `translate(${point.x} ${point.y})`,
-    });
-
-    const r = faction.type === 'government' ? 8.5 : 7.5;
-    group.appendChild(createSvgElement('circle', {
-      className: 'command-center__geo-node-ring',
-      cx: 0,
-      cy: 0,
-      r: r + 5.5,
-    }));
-    group.appendChild(createSvgElement('circle', {
-      className: `command-center__geo-node-dot command-center__geo-node-dot--${faction.type}`,
-      cx: 0,
-      cy: 0,
-      r,
-    }));
-    const label = createSvgElement('text', {
-      className: 'command-center__geo-node-label',
-      x: 12,
-      y: 4,
-    });
-    label.textContent = faction.name;
-    group.appendChild(label);
-
-    const title = createSvgElement('title', {});
-    title.textContent = `${faction.name} — Capability ${Math.round(faction.capabilityScore)}, Safety ${Math.round(faction.safetyScore)}, Influence ${Math.round(faction.resources.influence)}`;
-    group.appendChild(title);
-
-    nodes.appendChild(group);
-  }
-  svg.appendChild(nodes);
-
-  section.appendChild(svg as unknown as Node);
-  const legend = div({ className: 'command-center__geo-legend' });
-  legend.appendChild(span({ className: 'command-center__geo-legend-item', text: 'Green = alliance' }));
-  legend.appendChild(span({ className: 'command-center__geo-legend-item', text: 'Red = tension (opacity scales)' }));
-  section.appendChild(legend);
-
-  return section;
 }
 
 function createAgiFrontierMap(state: GameState, playerFactionId: string): HTMLElement {
@@ -1086,30 +953,6 @@ function createActionButtons(
   return row;
 }
 
-function createRecentLog(entries: string[]): HTMLElement {
-  const section = div({ className: 'command-center__log' });
-  section.appendChild(createSectionHeader('Recent Activity'));
-
-  const list = el('ul', { className: 'command-center__log-list' });
-
-  if (entries.length === 0) {
-    const emptyItem = el('li', {
-      className: 'command-center__log-item command-center__log-item--empty',
-    });
-    emptyItem.textContent = 'No recent activity.';
-    list.appendChild(emptyItem);
-  } else {
-    for (const entry of entries.slice(0, 5)) {
-      const item = el('li', { className: 'command-center__log-item' });
-      item.textContent = entry;
-      list.appendChild(item);
-    }
-  }
-
-  section.appendChild(list);
-  return section;
-}
-
 function createNarrativeTimeline(entries: string[]): HTMLElement {
   const section = div({ className: 'command-center__narrative' });
   section.appendChild(createSectionHeader('Turn Narrative'));
@@ -1203,7 +1046,6 @@ export function renderExpandedCommandCenter(
     callbacks.onOpenActionReview,
   ));
   leftCol.appendChild(createAgiFrontierMap(gameState, playerFactionId));
-  leftCol.appendChild(createGeopoliticalMap(gameState, playerFactionId));
   leftCol.appendChild(createSituationsSection(situations, callbacks.onSuggestedAction));
   mainContent.appendChild(leftCol);
 
@@ -1444,96 +1286,6 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
   padding: 14px 14px 12px;
 }
 
-.command-center__geo-map {
-  border: 1px solid var(--line);
-  background: var(--panel-soft, #f8f6f2);
-  padding: 14px 14px 12px;
-}
-
-.command-center__geo-svg {
-  width: 100%;
-  height: 220px;
-  display: block;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: linear-gradient(180deg, rgba(40, 80, 120, 0.12), rgba(40, 80, 120, 0.04));
-  border-radius: 6px;
-}
-
-.command-center__geo-land {
-  fill: rgba(120, 140, 150, 0.22);
-  stroke: rgba(120, 140, 150, 0.35);
-  stroke-width: 1;
-}
-
-.command-center__geo-land--south {
-  fill: rgba(120, 140, 150, 0.16);
-}
-
-.command-center__geo-link {
-  stroke-width: 2.5;
-}
-
-.command-center__geo-link--tension {
-  stroke: rgba(220, 70, 70, 1);
-  stroke-dasharray: 5 4;
-}
-
-.command-center__geo-link--alliance {
-  stroke: rgba(60, 190, 120, 1);
-}
-
-.command-center__geo-node-ring {
-  fill: transparent;
-  stroke: rgba(255, 255, 255, 0.6);
-  stroke-width: 1.5;
-}
-
-.command-center__geo-node--player .command-center__geo-node-ring {
-  stroke: rgba(255, 255, 255, 0.85);
-  stroke-width: 2;
-}
-
-.command-center__geo-node-dot--lab {
-  fill: rgba(245, 155, 84, 0.95);
-  stroke: rgba(20, 20, 20, 0.28);
-  stroke-width: 1;
-}
-
-.command-center__geo-node-dot--government {
-  fill: rgba(120, 150, 245, 0.95);
-  stroke: rgba(20, 20, 20, 0.28);
-  stroke-width: 1;
-}
-
-.command-center__geo-node--player .command-center__geo-node-dot--lab,
-.command-center__geo-node--player .command-center__geo-node-dot--government {
-  fill: rgba(255, 255, 255, 0.92);
-  stroke: rgba(0, 0, 0, 0.22);
-}
-
-.command-center__geo-node-label {
-  font-family: var(--mono, 'IBM Plex Mono', monospace);
-  font-size: 10px;
-  fill: rgba(20, 20, 20, 0.78);
-  paint-order: stroke;
-  stroke: rgba(255, 255, 255, 0.7);
-  stroke-width: 3px;
-  stroke-linejoin: round;
-}
-
-.command-center__geo-legend {
-  margin-top: 8px;
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--text-2, var(--muted));
-  font-family: var(--mono, 'IBM Plex Mono', monospace);
-}
-
-.command-center__geo-legend-item {
-  opacity: 0.9;
-}
 
 .command-center__agi-map-summary {
   font-size: 12px;
