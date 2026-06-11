@@ -8,6 +8,7 @@ import {
   deleteSaveSlot,
   hasSaveSlot,
   getSaveMetadata,
+  SAVE_VERSION,
 } from '../src/core/persistence.js';
 import { createInitialState } from '../src/core/state.js';
 import { GameState } from '../src/core/types.js';
@@ -35,7 +36,7 @@ describe('serializeState', () => {
     expect(serialized.quarter).toBe(state.quarter);
     expect(serialized.globalSafety).toBe(state.globalSafety);
     expect(serialized.gameOver).toBe(state.gameOver);
-    expect(serialized.version).toBe(1);
+    expect(serialized.version).toBe(SAVE_VERSION);
   });
 
   it('converts Set to array for unlockedTechs', () => {
@@ -111,18 +112,11 @@ describe('deserializeState', () => {
     expect(restoredFaction.unlockedTechs.has('tech2')).toBe(true);
   });
 
-  it('handles version mismatch gracefully', () => {
+  it('throws on version mismatch so callers can fall back gracefully', () => {
     const serialized = serializeState(createInitialState());
     (serialized as any).version = 999;
 
-    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    const restored = deserializeState(serialized);
-
-    expect(restored).toBeDefined();
-    expect(consoleSpy).toHaveBeenCalled();
-
-    consoleSpy.mockRestore();
+    expect(() => deserializeState(serialized)).toThrow();
   });
 
   it('preserves winnerId when game is over', () => {

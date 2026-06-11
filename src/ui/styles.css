@@ -6426,3 +6426,83 @@ button:focus-visible,
 .world-map__feed--hud .world-map__feed-item[data-intent="coordinate_safety"] .world-map__feed-meta {
   color: #ffd166;
 }
+
+/* ── Continue campaign overlay (autosave resume) ───────────────────────────── */
+.continue-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-overlay) + 10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 7, 13, 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.continue-card {
+  background: var(--surface, #0d1a2e);
+  border: 1px solid rgba(95, 212, 255, 0.35);
+  border-radius: 10px;
+  padding: 36px 44px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+.continue-card__label {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(95, 212, 255, 0.7);
+  margin-bottom: 10px;
+}
+
+.continue-card__meta {
+  font-family: var(--mono, monospace);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary, #e8edf5);
+  margin-bottom: 6px;
+}
+
+.continue-card__date {
+  font-size: 12px;
+  color: rgba(160, 190, 225, 0.55);
+  margin-bottom: 28px;
+}
+
+.continue-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.continue-card__btn {
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.continue-card__btn:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.continue-card__btn--resume {
+  background: rgba(95, 212, 255, 0.18);
+  border: 1px solid rgba(95, 212, 255, 0.5);
+  color: #5fd4ff;
+}
+
+.continue-card__btn--new {
+  background: transparent;
+  border: 1px solid rgba(160, 190, 225, 0.25);
+  color: rgba(160, 190, 225, 0.7);
+}

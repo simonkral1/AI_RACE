@@ -33,7 +33,7 @@ import { generateDialogue, type DialogueLine } from '../ai/dialogueAI.js';
 import { saveToLocalStorage, loadFromLocalStorage } from '../core/persistence.js';
 import { startTutorial, hasTutorialCompleted } from './tutorial.js';
 import { playAdvance, playEvent, playSave, playLoad, playVictory, playDefeat, toggleAudio } from './audio.js';
-import { showSaveManager, autosave } from './saveManager.js';
+import { showSaveManager, autosave, probeAutosave, clearAutosave } from './saveManager.js';
 import { recordGameStart, recordGameEnd, showStatistics } from './statistics.js';
 import { cycleSpeed, getSpeedLabel } from './gameSpeed.js';
 import { renderFreeformActions } from './FreeformActions.js';
@@ -1704,6 +1704,8 @@ const resolveEventChoice = (choiceId: string): void => {
   pendingEvent = null;
   pendingEventChoices.clear();
   state.globalSafety = computeGlobalSafety(state);
+  // Autosave after event choice so progress survives a reload mid-event
+  autosave(state, { playerFactionId, eventHistory });
   renderEventPanel();
   render(state);
 };
@@ -2160,8 +2162,8 @@ const advance = async (): Promise<void> => {
       renderOrdersSection();
     }
 
-    // Autosave after each turn
-    autosave(state);
+    // Autosave after each turn (include session context so resume works)
+    autosave(state, { playerFactionId, eventHistory });
 
     render(state);
   } finally {
@@ -2545,6 +2547,9 @@ if (commandCenterContainer) {
 }
 
 const startCampaign = async (): Promise<void> => {
+  // Starting a fresh campaign — discard any stale autosave so it cannot
+  // surface on the next boot as a "Continue campaign" prompt.
+  clearAutosave();
   campaignStarted = true;
   ensureSelectedChatFaction();
   directiveInterpretationRequestKey += 1;
@@ -2592,6 +2597,79 @@ const startCampaign = async (): Promise<void> => {
   }
 };
 
+/**
+ * Resume a campaign from the autosave slot.
+ * Restores GameState, playerFactionId, and eventHistory.
+ * On any failure falls through to the normal new-campaign flow.
+ */
+const resumeCampaign = async (): Promise<void> => {
+  const probe = probeAutosave();
+  if (!probe.exists) {
+    // Nothing to resume — fall through to normal start
+    renderStartOverlay();
+    return;
+  }
+
+  const loadFromLocalStorage_fn = loadFromLocalStorage;
+  const restoredState = loadFromLocalStorage_fn('autosave');
+
+  if (!restoredState) {
+    // Save was bad/incompatible — already cleared by loadFromLocalStorage
+    renderStartOverlay();
+    return;
+  }
+
+  // Restore session variables
+  state = restoredState;
+  if (probe.playerFactionId && state.factions[probe.playerFactionId]) {
+    playerFactionId = probe.playerFactionId;
+    focusFactionId = playerFactionId;
+  }
+  if (probe.eventHistory) {
+    eventHistory = probe.eventHistory;
+  }
+
+  normalizeResearchForAllFactions();
+
+  // Enter campaign mode directly
+  campaignStarted = true;
+  introSequenceInstance?.close();
+  startOverlay?.classList.add('is-hidden');
+  endgameOverlay?.classList.add('is-hidden');
+  ensureSelectedChatFaction();
+  directiveInterpretationRequestKey += 1;
+  directiveInterpretationPending = false;
+  resetPlayerOrdersForFaction();
+  setActiveOrderRow(0);
+  renderPlayerControls();
+  render(state);
+
+  recordGameStart(playerFactionId);
+
+  gamemasterLoading = true;
+  renderGamemasterPanelUI();
+  updateGamemasterModalState();
+  try {
+    const resumeNarration = await withRequestTimeout(
+      gamemaster.generateOpeningNarration(state, playerFactionId),
+    );
+    gamemasterNarrative = resumeNarration;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: resumeNarration, timestamp: Date.now() },
+    ];
+  } catch {
+    gamemasterNarrative = `Welcome back. The year is ${state.year} Q${state.quarter}. The race continues.`;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: gamemasterNarrative, timestamp: Date.now() },
+    ];
+  }
+  gamemasterLoading = false;
+  renderGamemasterPanelUI();
+  updateGamemasterModalState();
+};
+
 const renderStartOverlay = () => {
   if (!startOverlay) return;
   if (autoStart) {
@@ -2600,6 +2678,10 @@ const renderStartOverlay = () => {
     endgameOverlay?.classList.add('is-hidden');
     return;
   }
+
+  // Check for a valid autosave to offer "Continue campaign"
+  const probe = probeAutosave();
+  const hasContinue = probe.exists && !!probe.meta && probe.meta.turn > 0;
 
   if (!introSequenceInstance) {
     introSequenceInstance = new IntroSequence(startOverlay, {
@@ -2615,6 +2697,46 @@ const renderStartOverlay = () => {
   campaignStarted = false;
   endgameOverlay?.classList.add('is-hidden');
   startOverlay.classList.remove('is-hidden');
+
+  // Inject a "Continue campaign" button at the top of the start overlay when
+  // a valid autosave is present, above the intro sequence content.
+  const existingContinue = startOverlay.querySelector('#continueOverlay');
+  if (hasContinue && !existingContinue) {
+    const meta = probe.meta!;
+    const savedAt = new Date(meta.savedAt).toLocaleString();
+    const continueEl = document.createElement('div');
+    continueEl.id = 'continueOverlay';
+    continueEl.className = 'continue-overlay';
+    continueEl.innerHTML = `
+      <div class="continue-card">
+        <div class="continue-card__label">Campaign in progress</div>
+        <div class="continue-card__meta">${meta.year} Q${meta.quarter} &mdash; Turn ${meta.turn}</div>
+        <div class="continue-card__date">Last saved ${savedAt}</div>
+        <div class="continue-card__actions">
+          <button class="continue-card__btn continue-card__btn--resume" id="continueResumeBtn">Continue campaign</button>
+          <button class="continue-card__btn continue-card__btn--new" id="continueNewBtn">New campaign</button>
+        </div>
+      </div>
+    `;
+    startOverlay.prepend(continueEl);
+
+    startOverlay.querySelector('#continueResumeBtn')?.addEventListener('click', () => {
+      continueEl.remove();
+      void resumeCampaign();
+    });
+
+    startOverlay.querySelector('#continueNewBtn')?.addEventListener('click', () => {
+      clearAutosave();
+      continueEl.remove();
+      introSequenceInstance!.open({ showBriefing: IntroSequence.shouldShow() });
+    });
+
+    // Show the continue card; keep the intro sequence hidden until "New campaign"
+    return;
+  } else if (!hasContinue) {
+    existingContinue?.remove();
+  }
+
   introSequenceInstance.open({
     showBriefing: IntroSequence.shouldShow(),
   });
