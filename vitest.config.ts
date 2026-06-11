@@ -5,7 +5,9 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
-      'tests/e2e/**', // Exclude Playwright tests
+      '**/tests/e2e/**', // Exclude Playwright tests (any checkout depth)
+      '**/.claude/worktrees/**', // Exclude agent worktrees
+      '**/.codex/**',
     ],
   },
 });

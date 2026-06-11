@@ -22,3 +22,6 @@
 /.vite.agent.log
 /.vite.agent.pid
 /test-results/
+
+.claude/
+output/overnight/*.png
