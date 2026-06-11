@@ -7,6 +7,7 @@ export const SAFETY_THRESHOLDS = {
 };
 
 export const ACTION_POINTS_PER_TURN = 2;
+export const STARTING_RESEARCH_POINTS = 18;
 
 export const OPENNESS_MULTIPLIERS = {
   open: {

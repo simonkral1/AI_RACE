@@ -1,11 +1,11 @@
 import { applyResourceDelta, applyScoreDelta, applyStatDelta, computeGlobalSafety } from '../core/stats.js';
 import { unlockAvailableTechs } from '../core/tech.js';
+import { addUnifiedResearch, normalizeUnifiedResearch } from '../core/research.js';
 import { clamp } from '../core/utils.js';
 import { ActionChoice, BranchId, GameState, ResourceKey } from '../core/types.js';
 import { ACTIONS } from '../data/actions.js';
 import { TECH_TREE } from '../data/techTree.js';
 import { FACTION_TEMPLATES } from '../data/factions.js';
-import { decideActionsHeuristic } from './decideActions.js';
 import { callLlm, LlmMessage } from './llmClient.js';
 import { extractJsonSnippet } from './llmParsing.js';
 
@@ -33,7 +33,7 @@ type GmEffect =
   | {
       kind: 'stat';
       factionId: string;
-      key: 'safetyCulture' | 'opsec';
+      key: 'safetyCulture' | 'opsec' | 'hardPower';
       delta: number;
       reason?: string;
     }
@@ -62,9 +62,9 @@ type GmResult = {
 
 const ACTION_NAME = new Map(ACTIONS.map((action) => [action.id, action.name]));
 const TECH_BY_ID = new Map(TECH_TREE.map((node) => [node.id, node]));
-const RESOURCE_KEYS = new Set<ResourceKey>(['compute', 'talent', 'capital', 'data', 'influence', 'trust']);
-const BRANCH_KEYS = new Set<BranchId>(['capabilities', 'safety', 'ops', 'policy']);
-const STAT_KEYS = new Set(['safetyCulture', 'opsec']);
+const RESOURCE_KEYS = new Set<ResourceKey>(['compute', 'cybersecurity', 'capital', 'influence', 'trust']);
+const BRANCH_KEYS = new Set<BranchId>(['capabilities', 'safety', 'ops', 'hardPower', 'policy']);
+const STAT_KEYS = new Set(['safetyCulture', 'opsec', 'hardPower']);
 const SCORE_KEYS = new Set(['capabilityScore', 'safetyScore']);
 
 const formatNumber = (value: number): number => Math.round(value * 10) / 10;
@@ -107,11 +107,12 @@ const actionToPhrase = (choice: ActionChoice, state: GameState): string => {
   }
 };
 
-const fallbackDirective = (state: GameState, factionId: string, rng: () => number): string => {
-  const choices = decideActionsHeuristic(state, factionId, rng);
-  if (!choices.length) return 'Maintain the current strategy';
-  const phrases = choices.map((choice) => actionToPhrase(choice, state));
-  return `${phrases.join(' and ')}.`;
+const fallbackDirective = (faction: { type: string; name: string }): string => {
+  // Simple fallback based on faction type when LLM is unavailable
+  if (faction.type === 'government') {
+    return 'Pursue diplomatic and regulatory priorities.';
+  }
+  return 'Advance research and development priorities.';
 };
 
 const getFactionStrategy = (factionId: string) => {
@@ -122,10 +123,10 @@ const getFactionStrategy = (factionId: string) => {
 export const generateDirective = async (
   state: GameState,
   factionId: string,
-  rng: () => number,
+  _rng: () => number,
 ): Promise<string> => {
   const faction = state.factions[factionId];
-  if (!faction) return fallbackDirective(state, factionId, rng);
+  if (!faction) return fallbackDirective({ type: 'lab', name: factionId });
 
   const strategy = getFactionStrategy(factionId);
   const objective =
@@ -148,6 +149,7 @@ export const generateDirective = async (
       opsec: formatNumber(faction.opsec),
       capabilityScore: formatNumber(faction.capabilityScore),
       safetyScore: formatNumber(faction.safetyScore),
+      hardPower: formatNumber(faction.hardPower),
       exposure: formatNumber(faction.exposure),
       canDeployAgi: faction.canDeployAgi,
     },
@@ -159,6 +161,7 @@ export const generateDirective = async (
         type: other.type,
         capabilityScore: formatNumber(other.capabilityScore),
         safetyScore: formatNumber(other.safetyScore),
+        hardPower: formatNumber(other.hardPower),
         trust: formatNumber(other.resources.trust),
         influence: formatNumber(other.resources.influence),
       })),
@@ -180,8 +183,14 @@ export const generateDirective = async (
     },
   ];
 
-  const content = await callLlm(messages, { maxTokens: 64, temperature: 0.6, topP: 0.9 });
-  if (!content) return fallbackDirective(state, factionId, rng);
+  const content = await callLlm(messages, {
+    maxTokens: 64,
+    temperature: 0.6,
+    topP: 0.9,
+    timeoutMs: 1200,
+    reasoningEffort: 'none',
+  });
+  if (!content) return fallbackDirective(faction);
   return sanitizeDirective(content);
 };
 
@@ -232,6 +241,7 @@ export const resolveNarrativeEffects = async (
         resources: faction.resources,
         capabilityScore: formatNumber(faction.capabilityScore),
         safetyScore: formatNumber(faction.safetyScore),
+        hardPower: formatNumber(faction.hardPower),
         safetyCulture: formatNumber(faction.safetyCulture),
         opsec: formatNumber(faction.opsec),
         exposure: formatNumber(faction.exposure),
@@ -258,7 +268,13 @@ export const resolveNarrativeEffects = async (
     },
   ];
 
-  const content = await callLlm(messages, { maxTokens: 420, temperature: 0.4, topP: 0.9 });
+  const content = await callLlm(messages, {
+    maxTokens: 420,
+    temperature: 0.4,
+    topP: 0.9,
+    timeoutMs: 1500,
+    reasoningEffort: 'none',
+  });
   if (!content) return null;
   const json = extractJsonSnippet(content, 'object');
   if (!json) return null;
@@ -273,6 +289,10 @@ export const resolveNarrativeEffects = async (
 export const applyNarrativeEffects = (state: GameState, result: GmResult): string[] => {
   const logEntries: string[] = [];
   const effects = Array.isArray(result.effects) ? result.effects : [];
+
+  for (const faction of Object.values(state.factions)) {
+    normalizeUnifiedResearch(faction);
+  }
 
   for (const effect of effects) {
     if (!effect || typeof effect !== 'object') continue;
@@ -321,10 +341,9 @@ export const applyNarrativeEffects = (state: GameState, result: GmResult): strin
         if (!BRANCH_KEYS.has(effect.branch)) break;
         const delta = clamp(effect.delta ?? 0, -16, 16);
         if (!Number.isFinite(delta)) break;
-        const nextValue = Math.max(0, faction.research[effect.branch] + delta);
-        faction.research[effect.branch] = nextValue;
+        addUnifiedResearch(faction, delta);
         logEntries.push(
-          `${faction.name} research in ${effect.branch} ${delta >= 0 ? 'advanced' : 'set back'} by ${Math.abs(
+          `${faction.name} research pool ${delta >= 0 ? 'advanced' : 'set back'} by ${Math.abs(
             delta,
           )} RP.`,
         );

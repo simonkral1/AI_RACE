@@ -1,5 +1,6 @@
 // TechNode component - Individual tech node for the horizontal tech tree
 import type { TechNode as TechNodeType, TechEffect, FactionState, BranchId } from '../../core/types.js';
+import { getUnifiedResearchPool } from '../../core/research.js';
 import { el, div, span, BRANCH_COLORS, STATUS_COLORS, ICONS } from './base.js';
 
 export type TechNodeStatus = 'locked' | 'available' | 'unlocked';
@@ -48,9 +49,10 @@ function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-function formatStatKey(key: 'safetyCulture' | 'opsec'): string {
+function formatStatKey(key: 'safetyCulture' | 'opsec' | 'hardPower'): string {
   if (key === 'safetyCulture') return 'Safety Culture';
   if (key === 'opsec') return 'Opsec';
+  if (key === 'hardPower') return 'Hard Power';
   return key;
 }
 
@@ -161,8 +163,8 @@ export function createTechNodeDetail(
   const statusIcon = getStatusIcon(status);
 
   // Calculate research progress towards this tech
-  const branchProgress = faction.research[node.branch] || 0;
-  const progressPercent = Math.min(100, (branchProgress / node.cost) * 100);
+  const researchPool = getUnifiedResearchPool(faction);
+  const progressPercent = Math.min(100, (researchPool / node.cost) * 100);
 
   // Format all effects
   const effectsList = node.effects.map(formatEffect);
@@ -213,7 +215,7 @@ export function createTechNodeDetail(
                 }),
                 div({
                   className: 'tech-detail__progress-meta',
-                  text: `${branchProgress} / ${node.cost} RP`,
+                  text: `${Math.floor(researchPool)} / ${node.cost} RP`,
                 }),
               ],
             }),

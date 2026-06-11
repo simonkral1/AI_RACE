@@ -2,9 +2,21 @@ import './styles.css';
 import './simple.css';
 
 import { createInitialState } from '../core/state.js';
-import { resolveTurn } from '../core/engine.js';
+import { resolveTurn, getAction } from '../core/engine.js';
+import { applyTechEffects } from '../core/tech.js';
+import { ACTION_POINTS_PER_TURN, STARTING_RESEARCH_POINTS } from '../core/constants.js';
+import {
+  addUnifiedResearch,
+  getUnifiedResearchPool,
+  normalizeUnifiedResearch,
+  setUnifiedResearchPool,
+  spendUnifiedResearch,
+} from '../core/research.js';
+import { isTechAvailableForFaction } from '../core/techAccess.js';
 import { applyResourceDelta, applyScoreDelta, applyStatDelta, computeGlobalSafety } from '../core/stats.js';
 import { decideActions } from '../ai/decideActions.js';
+import { getFactionChatReply } from '../ai/factionComms.js';
+import { generateProactiveComms } from '../ai/proactiveComms.js';
 import {
   applyNarrativeEffects,
   generateDirective,
@@ -12,20 +24,18 @@ import {
   type NarrativeDirective,
 } from '../ai/narrativeAI.js';
 import { mulberry32, round1, clamp } from '../core/utils.js';
-import { ActionChoice, GameState, TechNode, BranchId } from '../core/types.js';
-import { ACTIONS } from '../data/actions.js';
+import { ActionChoice, ActionDefinition, GameState, TechNode, BranchId } from '../core/types.js';
 import { TECH_TREE } from '../data/techTree.js';
+import { ACTIONS } from '../data/actions.js';
 import { EVENTS, selectEvent, type EventDefinition, type EventChoice, type EventEffect } from '../data/events.js';
 import { pickEventChoice } from '../ai/eventAI.js';
 import { generateDialogue, type DialogueLine } from '../ai/dialogueAI.js';
-import { saveToLocalStorage, loadFromLocalStorage, getSaveSlots } from '../core/persistence.js';
-import { startTutorial, resetTutorial, hasTutorialCompleted } from './tutorial.js';
-import { playAdvance, playEvent, playSave, playLoad, playVictory, playDefeat, toggleAudio, isAudioEnabled } from './audio.js';
+import { saveToLocalStorage, loadFromLocalStorage } from '../core/persistence.js';
+import { startTutorial, hasTutorialCompleted } from './tutorial.js';
+import { playAdvance, playEvent, playSave, playLoad, playVictory, playDefeat, toggleAudio } from './audio.js';
 import { showSaveManager, autosave } from './saveManager.js';
 import { recordGameStart, recordGameEnd, showStatistics } from './statistics.js';
 import { cycleSpeed, getSpeedLabel } from './gameSpeed.js';
-import { renderSimpleTechTree } from './SimpleTechTree.js';
-import { renderSimpleActions } from './SimpleActions.js';
 import { renderFreeformActions } from './FreeformActions.js';
 import {
   renderGamemasterPanel,
@@ -37,34 +47,19 @@ import {
 import {
   createGamemaster,
   type Gamemaster,
-  type GameEvent,
+  type ActionReviewRequest,
+  type DirectiveActionTarget,
 } from '../ai/gamemaster.js';
 
-// Import new UI components
+import type { VictoryType, LossType } from '../core/victoryConditions.js';
+
 import {
   renderFactionList,
-  renderTechTree,
-  renderOrdersPanel,
-  renderGlobalDashboard,
-  renderStrategyQuestion,
   renderVictoryTracker,
-  renderVictorySummary,
   renderEndgameAnalysis,
-  needsTarget as componentNeedsTarget,
-  createTabbedTechTree,
-  type TechTreeCallbacks,
-  type TechTreeState,
-  type TabbedTechTreeState,
-  type ActionTarget,
-  type StrategyQuestionOptions,
-  type VictoryTrackerOptions,
 } from './components/index.js';
 
-// Import modal components
-import {
-  EventModal,
-  type EventModalCallbacks,
-} from './components/EventModal.js';
+import { EventModal } from './components/EventModal.js';
 import {
   showGamemasterModal,
   hideGamemasterModal,
@@ -73,6 +68,14 @@ import {
   type ChatMessage as GMChatMessage,
   type QuickActionType as GMQuickActionType,
 } from './components/GamemasterModal.js';
+import {
+  showFactionChatModal,
+  hideFactionChatModal,
+  updateFactionChatModal,
+  injectFactionChatModalStyles,
+  type FactionChatMessage,
+  type FactionChatTarget,
+} from './components/FactionChatModal.js';
 
 // Import new Command Center and Tech Tree Modal
 import {
@@ -80,20 +83,39 @@ import {
   TECH_TREE_MODAL_STYLES,
 } from './components/TechTreeModal.js';
 import {
+  IntroSequence,
+  INTRO_SEQUENCE_STYLES,
+} from './components/IntroSequence.js';
+import {
   renderExpandedCommandCenter,
-  updateExpandedCommandCenter,
+  type ActionDossierEntry,
   EXPANDED_COMMAND_CENTER_STYLES,
 } from './components/ExpandedCommandCenter.js';
+import {
+  ActionReviewModal,
+  type ActionReviewItem,
+} from './components/ActionReviewModal.js';
+import {
+  mountWorldMap,
+  resetWorldMapView,
+  setWorldMapStatus,
+  type MapTargetAction,
+} from './components/WorldMapCanvas.js';
+import {
+  runNegotiationPhase,
+  buildNegotiationContext,
+  requestAllianceConsent,
+  type NegotiationExchange,
+} from '../ai/negotiation.js';
+import { newAgentGame } from '../ai/agentClient.js';
 
 // DOM element references
 const factionList = document.getElementById('factionList');
+const worldMapContainer = document.getElementById('worldMap');
 const recentActions = document.getElementById('recentActions');
-const techContainer = document.querySelector('.panel--tech .tech-screen') as HTMLElement | null;
 const commandCenterContainer = document.getElementById('commandCenter');
 const focusCard = document.getElementById('focusCard');
 const startOverlay = document.getElementById('startOverlay');
-const startOptions = document.getElementById('startOptions');
-const startGameButton = document.getElementById('startGame');
 const endgameOverlay = document.getElementById('endgameOverlay');
 const endgameTitle = document.getElementById('endgameTitle');
 const endgameSubtitle = document.getElementById('endgameSubtitle');
@@ -106,18 +128,6 @@ const commsLog = document.getElementById('commsLog');
 const gamemasterContainer = document.getElementById('gamemasterPanel');
 const victoryTrackerContainer = document.getElementById('victoryTracker');
 
-// New action panel elements
-const advanceQuarterBtn = document.getElementById('advanceQuarter');
-const actionsTurnLabel = document.getElementById('actionsTurnLabel');
-const actionsTurnNum = document.getElementById('actionsTurnNum');
-const directiveInput = document.getElementById('directiveInput') as HTMLInputElement | null;
-const askGamemasterBtn = document.getElementById('askGamemaster');
-const eventBadge = document.getElementById('eventBadge');
-const eventBadgeCount = document.getElementById('eventBadgeCount');
-const resetGameBtn = document.getElementById('resetGame');
-const showStatsBtn = document.getElementById('showStats');
-const showShortcutsBtn = document.getElementById('showShortcuts');
-
 // Victory tracker state
 let victoryTrackerCollapsed = false;
 
@@ -129,36 +139,58 @@ let focusFactionId = 'us_lab_a';
 let activeOrderIndex = 0;
 let activeBranch: 'all' | TechNode['branch'] = 'all';
 let selectedTechId: string | null = null;
-let techSearchTerm = '';
 let pendingEvent: EventDefinition | null = null;
 let pendingEventChoices = new Map<string, string>();
+let selectedMapFactionId: string | null = null;
+let latestNegotiations: NegotiationExchange[] = [];
 let eventHistory: string[] = [];
 let commsFeed: DialogueLine[] = [];
 const autoStart = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('autostart') === '1';
 let campaignStarted = autoStart;
 
+const DEFAULT_PLAYER_ORDER: ActionChoice = {
+  actionId: 'research_capabilities',
+  openness: 'open',
+  targetFactionId: undefined,
+};
+
+const normalizeOrders = (orders: ActionChoice[]): ActionChoice[] => {
+  const normalized = orders.slice(0, ACTION_POINTS_PER_TURN).map((order) => ({ ...order }));
+  while (normalized.length < ACTION_POINTS_PER_TURN) {
+    normalized.push({ ...DEFAULT_PLAYER_ORDER });
+  }
+  return normalized;
+};
+
+const normalizeResearchForAllFactions = (): void => {
+  for (const faction of Object.values(state.factions)) {
+    normalizeUnifiedResearch(faction);
+  }
+};
+
+const grantPlayerStartingResearch = (): void => {
+  const faction = state.factions[playerFactionId];
+  if (!faction) return;
+  setUnifiedResearchPool(faction, STARTING_RESEARCH_POINTS);
+};
+
+grantPlayerStartingResearch();
+normalizeResearchForAllFactions();
+
 // Store player orders as ActionChoice[] for the new component system
-let playerOrders: ActionChoice[] = [
+let playerOrders: ActionChoice[] = normalizeOrders([
   { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
   { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
-];
+]);
 
 // Store player's narrative directive (free-form action)
 let narrativeDirective = '';
-
-// Tech tree controller reference
-let techTreeController: {
-  update: (faction: any, state: Partial<TechTreeState>) => void;
-  getState: () => TechTreeState;
-  destroy: () => void;
-} | null = null;
-
-// Tabbed tech tree controller reference
-let tabbedTechTreeController: {
-  update: (faction: any, state: Partial<TabbedTechTreeState>) => void;
-  getState: () => TabbedTechTreeState;
-  destroy: () => void;
-} | null = null;
+let directiveDraft = '';
+let lockedDirectives: string[] = [];
+let directiveInterpretationNote = 'Submit a directive to update your quarter plan.';
+let directiveInterpretationSource: 'llm' | 'fallback' | 'error' = 'fallback';
+let directiveInterpretationPending = false;
+let directiveInterpretationRequestKey = 0;
 
 // Gamemaster AI instance and state
 const gamemaster: Gamemaster = createGamemaster();
@@ -170,15 +202,91 @@ let gamemasterPanelElement: HTMLElement | null = null;
 // Modal instances
 let eventModalInstance: EventModal | null = null;
 let gamemasterModalOverlay: HTMLElement | null = null;
+let factionChatModalOverlay: HTMLElement | null = null;
 let techTreeModalInstance: TechTreeModal | null = null;
+let introSequenceInstance: IntroSequence | null = null;
+let actionReviewModalInstance: ActionReviewModal | null = null;
 
-// Use tabbed view by default (can be toggled with URL param ?simple=1)
-const useSimpleTechTree = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('simple') === '1';
+let factionChatLoading = false;
+let selectedChatFactionId = 'us_lab_b';
+const factionChatHistory = new Map<string, FactionChatMessage[]>();
+let factionCommsUnreadCount = 0;
+const lastInboundTurnByFaction = new Map<string, number>();
+let turnNarrativeFeed: string[] = [];
+let latestActionReviewItems: ActionReviewItem[] = [];
+let pendingActionReviewItems: ActionReviewItem[] = [];
+let actionReviewGenerationKey = 0;
+const ANALYST_TIMEOUT_MS = 25_000;
+const ACTION_REVIEW_TIMEOUT_MS = 20_000;
+const ACTION_REVIEW_AI_ERROR = '[AI Error] Analyst action review unavailable for this action.';
+let turnAdvanceLoadingOverlay: HTMLElement | null = null;
+let turnAdvanceLoadingDetail: HTMLElement | null = null;
+let turnAdvanceLoadingShownAt = 0;
+let turnAdvanceLoadingHideTimer: ReturnType<typeof setTimeout> | null = null;
 
-// TECH_BY_ID is now internal to the TechTree component
+const withRequestTimeout = <T>(promise: Promise<T>, timeoutMs = ANALYST_TIMEOUT_MS): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
 
-// Unused but kept for potential future use
-// const formatQuarter = (year: number, quarter: number): string => `${year} Q${quarter}`;
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+
+const ensureTurnAdvanceLoadingOverlay = (): void => {
+  if (turnAdvanceLoadingOverlay && turnAdvanceLoadingDetail) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'turn-loading-overlay';
+  overlay.innerHTML = `
+    <div class="turn-loading-card" role="status" aria-live="polite">
+      <div class="turn-loading-spinner" aria-hidden="true"></div>
+      <div class="turn-loading-title">Turn in progress</div>
+      <div class="turn-loading-detail">Preparing simulation update.</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  turnAdvanceLoadingOverlay = overlay;
+  turnAdvanceLoadingDetail = overlay.querySelector('.turn-loading-detail');
+};
+
+const setTurnAdvanceLoading = (visible: boolean, detail = 'Preparing simulation update.'): void => {
+  ensureTurnAdvanceLoadingOverlay();
+  if (turnAdvanceLoadingDetail) {
+    turnAdvanceLoadingDetail.textContent = detail;
+  }
+  if (turnAdvanceLoadingOverlay) {
+    if (visible) {
+      if (turnAdvanceLoadingHideTimer) {
+        clearTimeout(turnAdvanceLoadingHideTimer);
+        turnAdvanceLoadingHideTimer = null;
+      }
+      if (!turnAdvanceLoadingOverlay.classList.contains('is-visible')) {
+        turnAdvanceLoadingShownAt = Date.now();
+      }
+      turnAdvanceLoadingOverlay.classList.add('is-visible');
+      return;
+    }
+
+    const minVisibleMs = 320;
+    const elapsed = Date.now() - turnAdvanceLoadingShownAt;
+    const delayMs = Math.max(0, minVisibleMs - elapsed);
+    if (turnAdvanceLoadingHideTimer) {
+      clearTimeout(turnAdvanceLoadingHideTimer);
+    }
+    turnAdvanceLoadingHideTimer = setTimeout(() => {
+      turnAdvanceLoadingOverlay?.classList.remove('is-visible');
+      turnAdvanceLoadingHideTimer = null;
+    }, delayMs);
+  }
+};
 
 const getTension = (state: GameState): string => {
   const capability = Object.values(state.factions).reduce((sum, f) => sum + f.capabilityScore, 0);
@@ -223,46 +331,137 @@ const bandFor = (value: number) => {
 
 const canSeeExact = (factionId: string): boolean => factionId === playerFactionId;
 
-// Helper functions - some are now handled by components but kept for focus card and other uses
+const getFactionChatTargets = (): FactionChatTarget[] =>
+  Object.values(state.factions)
+    .filter((faction) => faction.id !== playerFactionId)
+    .map((faction) => ({
+      id: faction.id,
+      name: faction.name,
+      type: faction.type,
+    }));
 
-// renderStat is now handled by FactionCard component
+const getChatHistoryForFaction = (factionId: string): FactionChatMessage[] =>
+  [...(factionChatHistory.get(factionId) ?? [])];
 
-// branchLabel is now handled by TechTree component
+const TARGETED_ACTION_IDS = new Set(['espionage', 'subsidize', 'regulate', 'executive_order', 'strategic_initiative', 'form_alliance']);
 
-// getNodeStatus is now handled by TechTree component
+const getPlayerAllowedActions = (): ActionDefinition[] => {
+  const faction = state.factions[playerFactionId];
+  if (!faction) return [];
+  return ACTIONS.filter((action) => (
+    action.allowedFor.includes(faction.type)
+    && (!action.factionSpecific || action.factionSpecific === faction.id)
+  ));
+};
 
-// updateTargetStateForRow is now handled by OrdersPanel component
+const getPlayerActionTargets = (): DirectiveActionTarget[] =>
+  Object.values(state.factions)
+    .filter((faction) => faction.id !== playerFactionId)
+    .map((faction) => ({ id: faction.id, name: faction.name, type: faction.type }));
 
-// effectLabel is now handled by TechTree component
+const summarizeOrdersForDirectiveNote = (
+  orders: ActionChoice[],
+  targets: DirectiveActionTarget[] = getPlayerActionTargets(),
+): string => {
+  const targetNames = new Map(targets.map((target) => [target.id, target.name]));
+  return orders
+    .map((order) => {
+      const actionName = (() => {
+        try {
+          return getAction(order.actionId).name;
+        } catch {
+          return order.actionId;
+        }
+      })();
+      const openness = order.openness === 'secret' ? 'private' : 'open';
+      const target = order.targetFactionId
+        ? ` targeting ${targetNames.get(order.targetFactionId) ?? order.targetFactionId}`
+        : '';
+      return `${actionName} (${openness})${target}`;
+    })
+    .join(' | ');
+};
 
-// getTechDepth is now handled by TechTree component
+const setDirectiveInterpretationFromOrders = (
+  source: 'llm' | 'fallback' | 'error',
+  prefix: string,
+): void => {
+  directiveInterpretationSource = source;
+  directiveInterpretationNote = `${prefix}: ${summarizeOrdersForDirectiveNote(playerOrders)}`;
+};
 
-// collectPrereqs is now handled by TechTree component
+const syncNarrativeDirective = (): void => {
+  narrativeDirective = lockedDirectives.join(' | ').trim();
+};
 
-// getNextUnlockable is now handled by TechTree component
+const updateLockedDirectiveNote = (): void => {
+  directiveInterpretationSource = 'fallback';
+  if (!lockedDirectives.length) {
+    directiveInterpretationNote = 'No directives locked. Confirm directives to queue next turn actions.';
+    return;
+  }
+  const count = lockedDirectives.length;
+  directiveInterpretationNote = `${count} directive${count === 1 ? '' : 's'} locked in for next turn.`;
+};
 
-// matchesSearch is now handled by TechTree component
+const resetPlayerOrdersForFaction = (): void => {
+  const allowed = getPlayerAllowedActions();
+  const defaultActionId = allowed[0]?.id ?? 'research_capabilities';
+  playerOrders = normalizeOrders([
+    { actionId: defaultActionId, openness: 'open', targetFactionId: undefined },
+    { actionId: defaultActionId, openness: 'open', targetFactionId: undefined },
+  ]);
+  activeOrderIndex = 0;
+  setDirectiveInterpretationFromOrders('fallback', 'Current plan');
+};
 
-const getActionForBranch = (branch: TechNode['branch'], factionId: string): string => {
-  const faction = state.factions[factionId];
-  if (!faction) return 'policy';
-  if (branch === 'capabilities') return faction.type === 'lab' ? 'research_capabilities' : 'policy';
-  if (branch === 'safety') return 'research_safety';
-  if (branch === 'ops') return faction.type === 'lab' ? 'build_compute' : 'policy';
-  return 'policy';
+const clearDirectiveQueue = (): void => {
+  lockedDirectives = [];
+  directiveDraft = '';
+  syncNarrativeDirective();
+  updateLockedDirectiveNote();
+};
+
+updateLockedDirectiveNote();
+
+const findInvalidTargetedOrder = (orders: ActionChoice[]): ActionChoice | null =>
+  orders.find((order) => TARGETED_ACTION_IDS.has(order.actionId) && !order.targetFactionId) ?? null;
+
+const appendFactionChatMessage = (
+  factionId: string,
+  message: FactionChatMessage,
+  maxMessages = 24,
+): void => {
+  const next = [...getChatHistoryForFaction(factionId), message].slice(-maxMessages);
+  factionChatHistory.set(factionId, next);
+};
+
+const buildFactionDecisionContext = (factionId: string): string | undefined => {
+  const history = getChatHistoryForFaction(factionId).slice(-6);
+  if (!history.length) return undefined;
+  return history
+    .map((entry) => `${entry.role === 'user' ? 'Player' : 'Faction'}: ${entry.content}`)
+    .join('\n');
+};
+
+const getEventTargetFactionIds = (
+  target: 'faction' | 'all_labs' | 'all_factions' | undefined,
+  factionId: string,
+): string[] => {
+  if (target === 'faction') return [factionId];
+  if (target === 'all_labs') {
+    return Object.values(state.factions)
+      .filter((faction) => faction.type === 'lab')
+      .map((faction) => faction.id);
+  }
+  return Object.keys(state.factions);
 };
 
 const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
   for (const effect of effects) {
     switch (effect.kind) {
       case 'resource': {
-        const targets =
-          effect.target === 'faction'
-            ? [factionId]
-            : effect.target === 'all_labs'
-              ? Object.values(state.factions).filter((faction) => faction.type === 'lab').map((f) => f.id)
-              : Object.keys(state.factions);
-        for (const id of targets) {
+        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
           const faction = state.factions[id];
           if (!faction) continue;
           applyResourceDelta(faction, { [effect.key]: effect.delta });
@@ -270,13 +469,7 @@ const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
         break;
       }
       case 'score': {
-        const targets =
-          effect.target === 'faction'
-            ? [factionId]
-            : effect.target === 'all_labs'
-              ? Object.values(state.factions).filter((faction) => faction.type === 'lab').map((f) => f.id)
-              : Object.keys(state.factions);
-        for (const id of targets) {
+        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
           const faction = state.factions[id];
           if (!faction) continue;
           applyScoreDelta(faction, effect.key, effect.delta);
@@ -284,13 +477,7 @@ const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
         break;
       }
       case 'stat': {
-        const targets =
-          effect.target === 'faction'
-            ? [factionId]
-            : effect.target === 'all_labs'
-              ? Object.values(state.factions).filter((faction) => faction.type === 'lab').map((f) => f.id)
-              : Object.keys(state.factions);
-        for (const id of targets) {
+        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
           const faction = state.factions[id];
           if (!faction) continue;
           applyStatDelta(faction, effect.key, effect.delta);
@@ -300,11 +487,7 @@ const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
       case 'research': {
         const faction = state.factions[factionId];
         if (!faction) break;
-        faction.research[effect.branch] = clamp(
-          faction.research[effect.branch] + effect.delta,
-          0,
-          100,
-        );
+        addUnifiedResearch(faction, effect.delta);
         break;
       }
       case 'globalSafety': {
@@ -317,80 +500,31 @@ const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
   }
 };
 
-// Research tech handler - shared between simple and tabbed views
 const handleTechResearch = (techId: string): void => {
   const faction = state.factions[playerFactionId];
   if (!faction) return;
 
-  // Find the tech and try to unlock it
-  const tech = TECH_TREE.find(t => t.id === techId);
+  const tech = TECH_TREE.find((entry) => entry.id === techId);
   if (!tech) return;
+  if (!isTechAvailableForFaction(tech, faction)) {
+    state.log.push(`${tech.name} is not available to ${faction.name}.`);
+    render(state);
+    return;
+  }
 
-  // Check if we can afford it
-  const branchProgress = faction.research[tech.branch] || 0;
+  const researchPool = getUnifiedResearchPool(faction);
 
-  if (branchProgress >= tech.cost) {
-    // Unlock the tech
+  if (researchPool >= tech.cost) {
     faction.unlockedTechs.add(techId);
+    applyTechEffects(faction, tech.effects);
 
-    // Apply effects
-    for (const effect of tech.effects) {
-      if (effect.kind === 'capability') {
-        faction.capabilityScore += effect.delta;
-      } else if (effect.kind === 'safety') {
-        faction.safetyScore += effect.delta;
-      } else if (effect.kind === 'resource' && 'key' in effect) {
-        (faction.resources as any)[effect.key] += effect.delta;
-      } else if (effect.kind === 'unlockAgi') {
-        faction.canDeployAgi = true;
-      }
-    }
-
-    // Deduct cost from branch progress
-    faction.research[tech.branch] = Math.max(0, branchProgress - tech.cost);
+    spendUnifiedResearch(faction, tech.cost);
 
     state.log.push(`${faction.name} unlocked ${tech.name}`);
     render(state);
   } else {
-    state.log.push(`Not enough ${tech.branch} research points (need ${tech.cost}, have ${Math.floor(branchProgress)})`);
+    state.log.push(`Not enough research points (need ${tech.cost}, have ${Math.floor(researchPool)})`);
     render(state);
-  }
-};
-
-const renderTechScreen = (): void => {
-  if (!techContainer) return;
-  const faction = state.factions[playerFactionId];
-  if (!faction) return;
-
-  // Use simple tech tree if URL param is set, otherwise use tabbed view
-  if (useSimpleTechTree) {
-    renderSimpleTechTree(techContainer, faction, {
-      onResearch: handleTechResearch,
-    });
-  } else {
-    // Use the new tabbed tech tree
-    if (!tabbedTechTreeController) {
-      tabbedTechTreeController = createTabbedTechTree(
-        techContainer,
-        faction,
-        {
-          activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
-          selectedTechId: selectedTechId,
-          hoveredTechId: null,
-        },
-        {
-          onResearch: handleTechResearch,
-          onBranchChange: (branch) => {
-            activeBranch = branch;
-          },
-        }
-      );
-    } else {
-      tabbedTechTreeController.update(faction, {
-        activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
-        selectedTechId: selectedTechId,
-      });
-    }
   }
 };
 
@@ -440,19 +574,39 @@ const initEventModal = (): void => {
   });
 };
 
-const renderEventPanel = (): void => {
-  // Update event badge in action panel
-  updateActionsPanelUI();
+const initActionReviewModal = (): void => {
+  if (actionReviewModalInstance) return;
+  actionReviewModalInstance = new ActionReviewModal();
+};
 
-  // Ensure modal is initialized
+const openActionReviewFlow = async (
+  items: ActionReviewItem[],
+  consumePending: boolean,
+): Promise<void> => {
+  if (!items.length) return;
+  initActionReviewModal();
+
+  await new Promise<void>((resolve) => {
+    actionReviewModalInstance?.open({
+      items,
+      onComplete: () => {
+        if (consumePending) {
+          pendingActionReviewItems = [];
+        }
+        render(state);
+        resolve();
+      },
+    });
+  });
+};
+
+const renderEventPanel = (): void => {
   initEventModal();
 
-  // If there's a pending event, show the modal
   if (pendingEvent && eventModalInstance && !eventModalInstance.isOpen()) {
     eventModalInstance.open(pendingEvent);
   }
 
-  // Also update the inline panel if it exists (for legacy support)
   if (!eventPanel) return;
   if (!pendingEvent) {
     eventPanel.innerHTML = '<div class="event-panel__empty">No active events.</div>';
@@ -514,7 +668,7 @@ const handleGamemasterMessage = async (message: string): Promise<void> => {
 
   try {
     // Ask the gamemaster
-    const response = await gamemaster.askQuestion(message, state);
+    const response = await withRequestTimeout(gamemaster.askQuestion(message, state));
     gamemasterChatHistory = [
       ...gamemasterChatHistory,
       { role: 'assistant' as const, content: response, timestamp: Date.now() },
@@ -522,7 +676,11 @@ const handleGamemasterMessage = async (message: string): Promise<void> => {
   } catch (error) {
     gamemasterChatHistory = [
       ...gamemasterChatHistory,
-      { role: 'assistant' as const, content: 'I encountered an error processing your question. Please try again.', timestamp: Date.now() },
+      {
+        role: 'assistant' as const,
+        content: '[AI Error] Analyst LLM request failed. Check proxy/model and retry.',
+        timestamp: Date.now(),
+      },
     ];
   }
 
@@ -540,7 +698,7 @@ const handleGamemasterQuickAction = async (action: QuickActionType): Promise<voi
   try {
     switch (action) {
       case 'explain-safety':
-        response = await gamemaster.explainMechanics('safety');
+        response = await withRequestTimeout(gamemaster.explainMechanics('safety'));
         gamemasterChatHistory = [
           ...gamemasterChatHistory,
           { role: 'user' as const, content: 'Explain safety mechanics', timestamp: Date.now() },
@@ -549,7 +707,7 @@ const handleGamemasterQuickAction = async (action: QuickActionType): Promise<voi
         break;
 
       case 'explain-capability':
-        response = await gamemaster.explainMechanics('capability');
+        response = await withRequestTimeout(gamemaster.explainMechanics('capability'));
         gamemasterChatHistory = [
           ...gamemasterChatHistory,
           { role: 'user' as const, content: 'Explain capability mechanics', timestamp: Date.now() },
@@ -558,7 +716,7 @@ const handleGamemasterQuickAction = async (action: QuickActionType): Promise<voi
         break;
 
       case 'explain-actions':
-        response = await gamemaster.explainMechanics('actions');
+        response = await withRequestTimeout(gamemaster.explainMechanics('actions'));
         gamemasterChatHistory = [
           ...gamemasterChatHistory,
           { role: 'user' as const, content: 'Explain available actions', timestamp: Date.now() },
@@ -568,7 +726,7 @@ const handleGamemasterQuickAction = async (action: QuickActionType): Promise<voi
 
       case 'get-advice':
       case 'what-should-i-do':
-        response = await gamemaster.getStrategicAdvice(state, playerFactionId);
+        response = await withRequestTimeout(gamemaster.getStrategicAdvice(state, playerFactionId));
         gamemasterChatHistory = [
           ...gamemasterChatHistory,
           { role: 'user' as const, content: 'What should I do?', timestamp: Date.now() },
@@ -577,7 +735,7 @@ const handleGamemasterQuickAction = async (action: QuickActionType): Promise<voi
         break;
 
       case 'get-summary':
-        response = await gamemaster.getGameSummary(state);
+        response = await withRequestTimeout(gamemaster.getGameSummary(state));
         gamemasterChatHistory = [
           ...gamemasterChatHistory,
           { role: 'user' as const, content: 'Give me a game summary', timestamp: Date.now() },
@@ -591,7 +749,11 @@ const handleGamemasterQuickAction = async (action: QuickActionType): Promise<voi
   } catch (error) {
     gamemasterChatHistory = [
       ...gamemasterChatHistory,
-      { role: 'assistant' as const, content: 'I encountered an error. Please try again.', timestamp: Date.now() },
+      {
+        role: 'assistant' as const,
+        content: '[AI Error] Analyst LLM request failed. Check proxy/model and retry.',
+        timestamp: Date.now(),
+      },
     ];
   }
 
@@ -634,6 +796,7 @@ const updateGamemasterNarrative = async (event: EventDefinition, choice: EventCh
   try {
     gamemasterNarrative = await gamemaster.narrateEvent(event, choice);
     renderGamemasterPanelUI();
+    updateGamemasterModalState();
   } catch {
     // Keep existing narrative on error
   }
@@ -644,19 +807,23 @@ const renderFocusCard = (state: GameState): void => {
   const faction = state.factions[focusFactionId];
   if (!faction) return;
   const reveal = canSeeExact(faction.id);
-  const capability = reveal ? round1(faction.capabilityScore) : bandFor(faction.capabilityScore).label;
+  const capital = reveal ? round1(faction.resources.capital) : bandFor(faction.resources.capital).label;
   const safety = reveal ? round1(faction.safetyScore) : bandFor(faction.safetyScore).label;
   const compute = reveal ? round1(faction.resources.compute) : bandFor(faction.resources.compute).label;
-  const trust = round1(faction.resources.trust);
+  const cyber = reveal ? round1(faction.resources.cybersecurity) : bandFor(faction.resources.cybersecurity).label;
+  const softPower = round1(faction.resources.trust);
+  const hardPower = reveal ? round1(faction.hardPower) : bandFor(faction.hardPower).label;
   const agiReady = reveal ? (faction.canDeployAgi ? 'Ready' : 'Not Ready') : 'Unknown';
 
   focusCard.innerHTML = `
     <div class="focus-card__title">${faction.name}</div>
     <div class="focus-card__row"><span>Type</span><span class="focus-card__value">${faction.type.toUpperCase()}</span></div>
-    <div class="focus-card__row"><span>Capability</span><span class="focus-card__value">${capability}</span></div>
+    <div class="focus-card__row"><span>Capital</span><span class="focus-card__value">${capital}</span></div>
     <div class="focus-card__row"><span>Safety</span><span class="focus-card__value">${safety}</span></div>
     <div class="focus-card__row"><span>Compute</span><span class="focus-card__value">${compute}</span></div>
-    <div class="focus-card__row"><span>Trust</span><span class="focus-card__value">${trust}</span></div>
+    <div class="focus-card__row"><span>Cybersecurity</span><span class="focus-card__value">${cyber}</span></div>
+    <div class="focus-card__row"><span>Soft Power</span><span class="focus-card__value">${softPower}</span></div>
+    <div class="focus-card__row"><span>Hard Power</span><span class="focus-card__value">${hardPower}</span></div>
     <div class="focus-card__row"><span>AGI Readiness</span><span class="focus-card__value">${agiReady}</span></div>
   `;
 };
@@ -681,43 +848,55 @@ const renderVictoryTrackerUI = (state: GameState): void => {
   victoryTrackerContainer.replaceChildren(trackerElement);
 };
 
-// needsTarget is now exported from components, but we keep a local reference for compatibility
-const needsTarget = componentNeedsTarget;
+const submitDirective = (rawDirective: string): void => {
+  const directive = rawDirective.trim();
+  if (!directive) return;
 
-const getAllowedActions = (factionId: string) => {
-  const faction = state.factions[factionId];
-  if (!faction) return [];
-  return ACTIONS.filter((action) => {
-    if (!action.allowedFor.includes(faction.type)) return false;
-    if (action.id === 'deploy_agi' && !faction.canDeployAgi) return false;
-    return true;
-  });
+  lockedDirectives = [...lockedDirectives, directive];
+  syncNarrativeDirective();
+  directiveDraft = '';
+  gamemaster.recordDirective(state.turn, playerFactionId, directive);
+  directiveInterpretationRequestKey += 1;
+  directiveInterpretationPending = false;
+  updateLockedDirectiveNote();
+  state.log.push(`Directive locked in: "${directive.substring(0, 90)}${directive.length > 90 ? '...' : ''}"`);
+  render(state);
 };
 
-// Render the orders section using Pax Historia-inspired freeform actions
+const editLockedDirective = (index: number): void => {
+  if (index < 0 || index >= lockedDirectives.length) return;
+  directiveDraft = lockedDirectives[index];
+  lockedDirectives = lockedDirectives.filter((_, i) => i !== index);
+  syncNarrativeDirective();
+  updateLockedDirectiveNote();
+  state.log.push('Directive unlocked for editing.');
+  render(state);
+};
+
+const removeLockedDirective = (index: number): void => {
+  if (index < 0 || index >= lockedDirectives.length) return;
+  lockedDirectives = lockedDirectives.filter((_, i) => i !== index);
+  syncNarrativeDirective();
+  updateLockedDirectiveNote();
+  state.log.push('Locked directive removed.');
+  render(state);
+};
+
 const renderOrdersSection = (): void => {
   if (!ordersContainer) return;
 
   const playerFaction = state.factions[playerFactionId];
   if (!playerFaction) return;
 
-  // Use Pax Historia-inspired freeform actions UI
   renderFreeformActions(ordersContainer, playerFaction, state, {
-    onDirectiveSubmit: (directive) => {
-      // Store the narrative directive for processing
-      narrativeDirective = directive;
-      state.log.push(`Directive submitted: "${directive.substring(0, 50)}${directive.length > 50 ? '...' : ''}"`);
-      render(state);
-    },
+    onDirectiveSubmit: submitDirective,
     onSuggestedAction: async (question) => {
-      // Route to gamemaster for AI help
       await handleGamemasterMessage(question);
     },
   });
 };
 
 const renderPlayerControls = (): void => {
-  // Update the player faction selector
   const playerFactionSelect = ordersContainer?.querySelector('#playerFaction') as HTMLSelectElement | null;
   if (playerFactionSelect) {
     playerFactionSelect.innerHTML = '';
@@ -765,11 +944,8 @@ const renderEndgameOverlay = (state: GameState): void => {
   }
 
   const winner = state.winnerId ? state.factions[state.winnerId] : null;
-  const topCapability = Object.values(state.factions).sort((a, b) => b.capabilityScore - a.capabilityScore)[0];
-
-  // Determine victory/loss type from state
-  const victoryType = state.victoryType as any;
-  const lossType = state.lossType as any;
+  const victoryType = state.victoryType as VictoryType | undefined;
+  const lossType = state.lossType as LossType | undefined;
 
   if (winner) {
     endgameTitle.textContent = `${winner.name} Wins`;
@@ -779,7 +955,7 @@ const renderEndgameOverlay = (state: GameState): void => {
     } else if (victoryType === 'dominant') {
       endgameSubtitle.textContent = `Achieved technological dominance in ${state.year} Q${state.quarter}.`;
     } else if (victoryType === 'public_trust') {
-      endgameSubtitle.textContent = `Won through public trust and successful products.`;
+      endgameSubtitle.textContent = `Won through soft power and successful products.`;
     } else if (victoryType === 'regulatory') {
       endgameSubtitle.textContent = `Regulatory victory - all labs maintained safety through ${state.year}.`;
     } else if (victoryType === 'alliance') {
@@ -796,7 +972,7 @@ const renderEndgameOverlay = (state: GameState): void => {
       endgameSubtitle.textContent = `Unsafe AGI deployment ended the campaign in ${state.year} Q${state.quarter}.`;
     } else if (lossType === 'collapse') {
       endgameTitle.textContent = 'Organization Collapsed';
-      endgameSubtitle.textContent = `Loss of public trust destroyed your organization.`;
+      endgameSubtitle.textContent = `Loss of soft power destroyed your organization.`;
     } else if (lossType === 'obsolescence') {
       endgameTitle.textContent = 'Made Obsolete';
       endgameSubtitle.textContent = `Your faction fell too far behind in capability.`;
@@ -824,9 +1000,76 @@ const renderEndgameOverlay = (state: GameState): void => {
   endgameOverlay.classList.remove('is-hidden');
 };
 
+// Targeted actions that only make sense against labs
+const TARGETED_LAB_ONLY = new Set(['regulate', 'subsidize', 'executive_order', 'strategic_initiative']);
+
+const areAllied = (a: string, b: string): boolean =>
+  (state.alliances.get(a) ?? []).includes(b) || (state.alliances.get(b) ?? []).includes(a);
+
+const formAlliance = (a: string, b: string): void => {
+  if (!state.alliances.has(a)) state.alliances.set(a, []);
+  if (!state.alliances.has(b)) state.alliances.set(b, []);
+  const listA = state.alliances.get(a)!;
+  const listB = state.alliances.get(b)!;
+  if (!listA.includes(b)) listA.push(b);
+  if (!listB.includes(a)) listB.push(a);
+};
+
+const getMapTargetActions = (targetFactionId: string): MapTargetAction[] => {
+  const target = state.factions[targetFactionId];
+  if (!target) return [];
+  return getPlayerAllowedActions()
+    .filter((action) => TARGETED_ACTION_IDS.has(action.id))
+    .filter((action) => (TARGETED_LAB_ONLY.has(action.id) ? target.type === 'lab' : true))
+    .map((action) => ({
+      id: action.id,
+      // Alliances need the other side's consent, so the button is a proposal
+      name: action.id === 'form_alliance' ? 'Propose Alliance' : action.name,
+    }));
+};
+
+const renderWorldMapPanel = (): void => {
+  if (!worldMapContainer) return;
+  mountWorldMap(
+    worldMapContainer,
+    {
+      state,
+      playerFactionId,
+      selectedFactionId: selectedMapFactionId,
+      negotiations: latestNegotiations,
+      targetActions: selectedMapFactionId ? getMapTargetActions(selectedMapFactionId) : [],
+      campaignStarted,
+    },
+    {
+      onSelectFaction: (factionId) => {
+        selectedMapFactionId = factionId;
+        renderWorldMapPanel();
+      },
+      onTargetAction: (actionId, targetFactionId) => {
+        const orders = normalizeOrders(playerOrders);
+        orders[activeOrderIndex] = { actionId, openness: 'open', targetFactionId };
+        playerOrders = orders;
+        activeOrderIndex = (activeOrderIndex + 1) % ACTION_POINTS_PER_TURN;
+        const actionName = getAction(actionId).name;
+        const targetName = state.factions[targetFactionId]?.name ?? targetFactionId;
+        turnNarrativeFeed = [
+          `Order set from map: ${actionName} targeting ${targetName}.`,
+          ...turnNarrativeFeed,
+        ].slice(0, 24);
+        selectedMapFactionId = null;
+        render(state);
+      },
+      onOpenChat: () => {
+        openFactionChatModal();
+      },
+    },
+  );
+};
+
 const render = (state: GameState): void => {
   renderHeader(state);
   renderFactions(state);
+  renderWorldMapPanel(); // World map is the central screen
   renderCommandCenter(); // Command Center is now the main panel
   renderLog(state);
   renderFocusCard(state);
@@ -850,7 +1093,557 @@ const render = (state: GameState): void => {
 
 // Read player orders from the state (maintained by the OrdersPanel component)
 const readPlayerOrders = (): ActionChoice[] => {
+  playerOrders = normalizeOrders(playerOrders);
   return [...playerOrders];
+};
+
+type TurnSnapshot = {
+  capability: number;
+  safety: number;
+  trust: number;
+  compute: number;
+  cybersecurity: number;
+  capital: number;
+  influence: number;
+  hardPower: number;
+  safetyCulture: number;
+  opsec: number;
+  publicOpinion: number;
+  securityLevel: number;
+  globalSafety: number;
+};
+
+const captureTurnSnapshot = (current: GameState, factionId: string): TurnSnapshot | null => {
+  const faction = current.factions[factionId];
+  if (!faction) return null;
+  return {
+    capability: faction.capabilityScore,
+    safety: faction.safetyScore,
+    trust: faction.resources.trust,
+    compute: faction.resources.compute,
+    cybersecurity: faction.resources.cybersecurity,
+    capital: faction.resources.capital,
+    influence: faction.resources.influence,
+    hardPower: faction.hardPower,
+    safetyCulture: faction.safetyCulture,
+    opsec: faction.opsec,
+    publicOpinion: faction.publicOpinion,
+    securityLevel: faction.securityLevel,
+    globalSafety: current.globalSafety,
+  };
+};
+
+const signed = (value: number): string => `${value >= 0 ? '+' : ''}${round1(value)}`;
+
+const summarizeActionMechanics = (order: ActionChoice): string => {
+  try {
+    const action = getAction(order.actionId);
+    const deltas = Object.entries(action.baseResourceDelta ?? {})
+      .filter(([, value]) => typeof value === 'number' && value !== 0)
+      .map(([key, value]) => `${signed(value as number)} ${key}`);
+    const research = Object.entries(action.baseResearch ?? {})
+      .filter(([, value]) => typeof value === 'number' && value > 0)
+      .map(([branch, value]) => `${signed(value as number)} ${branch} RP`);
+
+    const mechanicsBits = [
+      research.length ? `research ${research.join(', ')}` : null,
+      deltas.length ? `resources ${deltas.join(', ')}` : null,
+      order.openness === 'open'
+        ? 'open posture tends to improve soft power and safety'
+        : 'secret posture boosts speed but raises exposure risk',
+    ].filter(Boolean);
+
+    return `${action.name} (${order.openness}): ${mechanicsBits.join('; ')}.`;
+  } catch {
+    return `${order.actionId} (${order.openness}) executed.`;
+  }
+};
+
+const resourceDeltaFromSnapshot = (before: TurnSnapshot, after: TurnSnapshot, key: string): number | null => {
+  switch (key) {
+    case 'compute':
+      return after.compute - before.compute;
+    case 'capital':
+      return after.capital - before.capital;
+    case 'trust':
+      return after.trust - before.trust;
+    case 'cybersecurity':
+      return after.cybersecurity - before.cybersecurity;
+    case 'influence':
+      return after.influence - before.influence;
+    case 'hardPower':
+      return after.hardPower - before.hardPower;
+    default:
+      return null;
+  }
+};
+
+const summarizeActionEffectiveness = (
+  order: ActionChoice,
+  before: TurnSnapshot,
+  after: TurnSnapshot,
+): string => {
+  try {
+    const action = getAction(order.actionId);
+    const notes: string[] = [];
+
+    const researchEntries = Object.entries(action.baseResearch ?? {}).filter(([, value]) => typeof value === 'number' && value > 0);
+    if (researchEntries.length > 0) {
+      const researchDetail = researchEntries.map(([branch, value]) => `${signed(value as number)} ${branch} RP`).join(', ');
+      notes.push(`research pipeline advanced (${researchDetail})`);
+    }
+
+    const resourceEntries = Object.entries(action.baseResourceDelta ?? {}).filter(([, value]) => typeof value === 'number' && value !== 0);
+    if (resourceEntries.length > 0) {
+      const resourceDetail = resourceEntries
+        .map(([key]) => {
+          const actual = resourceDeltaFromSnapshot(before, after, key);
+          return actual == null ? null : `${key} ${signed(actual)}`;
+        })
+        .filter((value): value is string => Boolean(value));
+      if (resourceDetail.length) notes.push(`observed shift ${resourceDetail.join(', ')}`);
+    }
+
+    if (action.id === 'research_capabilities' && after.capability - before.capability <= 0) {
+      notes.push('capability remained flat this quarter; this action typically compounds through later tech unlocks');
+    }
+    if (action.id === 'research_safety' && after.safety - before.safety <= 0) {
+      notes.push('safety gains were limited this quarter despite safety investment');
+    }
+
+    const postureNote = order.openness === 'open'
+      ? 'open posture improved observability and soft-power pressure'
+      : 'secret posture increased speed-at-risk dynamics';
+    notes.push(postureNote);
+
+    return `${action.name} (${order.openness}) -> ${notes.join('; ')}.`;
+  } catch {
+    return `${order.actionId} (${order.openness}) -> execution completed with limited telemetry.`;
+  }
+};
+
+const summarizeDirectiveOutcome = (
+  directive: string,
+  before: TurnSnapshot,
+  after: TurnSnapshot,
+): string => {
+  const trimmed = directive.trim();
+  if (!trimmed) return '';
+
+  const lower = trimmed.toLowerCase();
+  const checks: Array<{ keys: string[]; metric: string; delta: number }> = [
+    { keys: ['safety', 'alignment', 'secure', 'guardrail'], metric: 'safety', delta: after.safety - before.safety },
+    { keys: ['capability', 'research', 'accelerate', 'speed'], metric: 'capability', delta: after.capability - before.capability },
+    { keys: ['trust', 'soft power', 'public', 'transparency'], metric: 'soft power', delta: after.trust - before.trust },
+    { keys: ['compute', 'infrastructure', 'cluster'], metric: 'compute', delta: after.compute - before.compute },
+    { keys: ['capital', 'funding', 'budget'], metric: 'capital', delta: after.capital - before.capital },
+  ];
+
+  const matched = checks.find((check) => check.keys.some((key) => lower.includes(key)));
+  if (!matched) {
+    return `Your directive "${trimmed}" was ingested; measured effects were mixed across key metrics.`;
+  }
+
+  if (matched.delta > 0) {
+    return `Your directive "${trimmed}" aligned with outcomes: ${matched.metric} moved ${signed(matched.delta)}.`;
+  }
+  if (matched.delta < 0) {
+    return `Your directive "${trimmed}" faced resistance this quarter: ${matched.metric} moved ${signed(matched.delta)}.`;
+  }
+  return `Your directive "${trimmed}" produced limited immediate movement in ${matched.metric}; impact may be delayed.`;
+};
+
+const formatActionIntelLabel = (order: ActionChoice, current: GameState): string => {
+  try {
+    const action = getAction(order.actionId);
+    const targetName = order.targetFactionId ? current.factions[order.targetFactionId]?.name : null;
+    return targetName ? `${action.name} -> ${targetName}` : action.name;
+  } catch {
+    return order.actionId;
+  }
+};
+
+const summarizePublicActionIntel = (
+  current: GameState,
+  allChoices: Record<string, ActionChoice[]>,
+  playerFaction: string,
+): string => {
+  const lines: string[] = [];
+  for (const [factionId, orders] of Object.entries(allChoices)) {
+    if (factionId === playerFaction) continue;
+    const faction = current.factions[factionId];
+    if (!faction) continue;
+
+    const publicOrders = orders.filter((order) => order.openness === 'open');
+    if (!publicOrders.length) {
+      lines.push(`${faction.name}: no public disclosures`);
+      continue;
+    }
+
+    const actionNames = publicOrders.map((order) => formatActionIntelLabel(order, current));
+    lines.push(`${faction.name}: ${actionNames.join(', ')}`);
+  }
+  return lines.length ? `Public intel: ${lines.join(' | ')}.` : '';
+};
+
+const ACTION_PAPER_IDS = new Set([
+  'research_capabilities',
+  'research_safety',
+  'publish_research',
+  'open_research',
+  'policy',
+]);
+
+const describeActionIntel = (
+  order: ActionChoice,
+  actorId: string,
+  targetName: string | null,
+): string => {
+  const targetSuffix = targetName ? ` Target: ${targetName}.` : '';
+  if (actorId === playerFactionId) {
+    return `Your executed order.${targetSuffix}`;
+  }
+  if (order.openness === 'open') {
+    return `Publicly disclosed by the actor.${targetSuffix}`;
+  }
+  return `Private execution; intent was not publicly disclosed.${targetSuffix}`;
+};
+
+const buildActionEffectTokens = (order: ActionChoice): string[] => {
+  try {
+    const action = getAction(order.actionId);
+    const effects: string[] = [];
+    for (const [branch, value] of Object.entries(action.baseResearch ?? {})) {
+      if (typeof value === 'number' && value > 0) {
+        effects.push(`${signed(value)} ${branch} RP`);
+      }
+    }
+    for (const [resource, value] of Object.entries(action.baseResourceDelta ?? {})) {
+      if (typeof value === 'number' && value !== 0) {
+        effects.push(`${signed(value)} ${resource}`);
+      }
+    }
+    if (action.scoreEffects?.capabilityDelta) {
+      effects.push(`${signed(action.scoreEffects.capabilityDelta)} capability`);
+    }
+    if (action.scoreEffects?.safetyDelta) {
+      effects.push(`${signed(action.scoreEffects.safetyDelta)} safety`);
+    }
+    if (action.securityLevelDelta) {
+      effects.push(`${signed(action.securityLevelDelta)} security level`);
+    }
+    if (order.openness === 'open' && ACTION_PAPER_IDS.has(action.id)) {
+      effects.push('paper publication: partial diffusion to rivals');
+    }
+    if (order.openness === 'secret') {
+      effects.push('private channel: hidden intent');
+    } else {
+      effects.push('public channel: visible intent');
+    }
+    return effects;
+  } catch {
+    return ['execution complete'];
+  }
+};
+
+type ActionReviewDraft = Omit<ActionReviewItem, 'evaluation' | 'source'> & {
+  actorId: string;
+  isPlayer: boolean;
+};
+
+const buildTurnActionReviewDrafts = (
+  allChoices: Record<string, ActionChoice[]>,
+  current: GameState,
+  currentTurn: number,
+): ActionReviewDraft[] => {
+  const orderedFactionIds = [
+    playerFactionId,
+    ...Object.keys(current.factions).filter((id) => id !== playerFactionId),
+  ];
+  const items: ActionReviewDraft[] = [];
+  let seq = 0;
+
+  for (const factionId of orderedFactionIds) {
+    const faction = current.factions[factionId];
+    if (!faction) continue;
+    const orders = allChoices[factionId] ?? [];
+    for (const order of orders.slice(0, ACTION_POINTS_PER_TURN)) {
+      const action = getAction(order.actionId);
+      const targetName = order.targetFactionId ? current.factions[order.targetFactionId]?.name ?? order.targetFactionId : undefined;
+      const visibility = order.openness === 'open' ? 'public' : 'private';
+      items.push({
+        id: `t${currentTurn}-${factionId}-${seq}`,
+        actorName: faction.name,
+        actionName: targetName ? `${action.name} → ${targetName}` : action.name,
+        openness: order.openness,
+        visibility,
+        targetName,
+        actorId: factionId,
+        isPlayer: factionId === playerFactionId,
+        effects: buildActionEffectTokens(order),
+        intel: describeActionIntel(order, factionId, targetName ?? null),
+      });
+      seq += 1;
+    }
+  }
+
+  return items;
+};
+
+const buildDeterministicActionReviewItems = (
+  drafts: ActionReviewDraft[],
+  playerDirective: string,
+  playerNetDeltas?: ActionReviewRequest['netDeltas'],
+): ActionReviewItem[] => {
+  const directiveText = playerDirective.trim();
+  return drafts.map((draft) => {
+    const thisTurn = draft.visibility === 'public'
+      ? `${draft.actorName} publicly executed ${draft.actionName}.`
+      : `${draft.actorName} executed ${draft.actionName} through a private channel.`;
+
+    const effectsLine = draft.effects.length
+      ? draft.effects.slice(0, 3).join(', ')
+      : 'No large direct deltas identified.';
+
+    let nextTurn = draft.isPlayer
+      ? 'Maintain a coherent action sequence and verify target selection before advancing.'
+      : 'Monitor whether this move cascades into alliance, regulatory, or espionage pressure.';
+
+    if (draft.isPlayer && directiveText && playerNetDeltas) {
+      const momentum =
+        playerNetDeltas.capability
+        + playerNetDeltas.safety
+        + playerNetDeltas.trust * 0.5
+        + playerNetDeltas.globalSafety * 0.8;
+      if (momentum >= 3) {
+        nextTurn = 'Directive appears aligned with observed momentum; continue this line with targeted follow-through.';
+      } else if (momentum <= -3) {
+        nextTurn = 'Directive faced friction this turn; adjust action mix before recommitting to the same directive.';
+      } else {
+        nextTurn = 'Directive alignment is mixed; tighten next-turn actions around one explicit objective.';
+      }
+    }
+
+    const evaluation = `This turn: ${thisTurn}\nWhy it matters: ${effectsLine}\nNext turn: ${nextTurn}`;
+
+    return {
+      ...draft,
+      source: 'deterministic',
+      evaluation,
+    };
+  });
+};
+
+const buildTurnNetDeltas = (before: TurnSnapshot, after: TurnSnapshot): ActionReviewRequest['netDeltas'] => ({
+  capability: after.capability - before.capability,
+  safety: after.safety - before.safety,
+  trust: after.trust - before.trust,
+  compute: after.compute - before.compute,
+  capital: round1(after.capital - before.capital),
+  globalSafety: round1(after.globalSafety - before.globalSafety),
+});
+
+const buildActionAttributeChecks = (
+  before: TurnSnapshot | null,
+  after: TurnSnapshot,
+): ActionReviewRequest['attributeChecks'] => {
+  const withDelta = (value: number, prior: number | null): number | undefined =>
+    prior == null ? undefined : round1(value - prior);
+
+  return [
+    { label: 'Capability', value: round1(after.capability), delta: withDelta(after.capability, before?.capability ?? null) },
+    { label: 'Safety', value: round1(after.safety), delta: withDelta(after.safety, before?.safety ?? null) },
+    { label: 'Soft Power', value: round1(after.trust), delta: withDelta(after.trust, before?.trust ?? null) },
+    { label: 'Compute', value: round1(after.compute), delta: withDelta(after.compute, before?.compute ?? null) },
+    { label: 'Capital', value: round1(after.capital), delta: withDelta(after.capital, before?.capital ?? null) },
+    { label: 'Influence', value: round1(after.influence), delta: withDelta(after.influence, before?.influence ?? null) },
+    { label: 'Hard Power', value: round1(after.hardPower), delta: withDelta(after.hardPower, before?.hardPower ?? null) },
+    { label: 'OPSEC', value: round1(after.opsec), delta: withDelta(after.opsec, before?.opsec ?? null) },
+    { label: 'Safety Culture', value: round1(after.safetyCulture), delta: withDelta(after.safetyCulture, before?.safetyCulture ?? null) },
+  ];
+};
+
+const mapWithConcurrency = async <T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> => {
+  const output: R[] = new Array(items.length);
+  let cursor = 0;
+
+  const runWorker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      output[index] = await worker(items[index], index);
+    }
+  };
+
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, () => runWorker());
+  await Promise.all(runners);
+  return output;
+};
+
+const narrateActionReviewItems = async (
+  drafts: ActionReviewDraft[],
+  current: GameState,
+  beforeSnapshotsByFaction: Map<string, TurnSnapshot>,
+  turnLog: string[],
+  playerDirective: string,
+  playerNetDeltas?: ActionReviewRequest['netDeltas'],
+): Promise<ActionReviewItem[]> => {
+  const trimmedDirective = playerDirective.trim();
+
+  return mapWithConcurrency(drafts, 2, async (draft) => {
+    let evaluation = ACTION_REVIEW_AI_ERROR;
+    const afterSnapshot = captureTurnSnapshot(current, draft.actorId);
+    const beforeSnapshot = beforeSnapshotsByFaction.get(draft.actorId) ?? null;
+    const attributeChecks = afterSnapshot
+      ? buildActionAttributeChecks(beforeSnapshot, afterSnapshot)
+      : undefined;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await withRequestTimeout(
+          gamemaster.narrateActionReview({
+            turn: current.turn,
+            year: current.year,
+            quarter: current.quarter,
+            actorName: draft.actorName,
+            actorId: draft.actorId,
+            isPlayer: draft.isPlayer,
+            actionName: draft.actionName,
+            openness: draft.openness,
+            visibility: draft.visibility,
+            targetName: draft.targetName,
+            playerDirective: draft.isPlayer && trimmedDirective ? trimmedDirective : undefined,
+            netDeltas: draft.isPlayer ? playerNetDeltas : undefined,
+            attributeChecks,
+            turnLog: turnLog.slice(-8),
+          }),
+          ACTION_REVIEW_TIMEOUT_MS,
+        );
+        const normalized = response?.trim() ?? '';
+        if (normalized && !normalized.startsWith('[AI Error]')) {
+          evaluation = normalized;
+          break;
+        }
+      } catch {
+        // Retry once on transport/model failure before surfacing explicit AI error.
+      }
+    }
+
+    return {
+      ...draft,
+      source: evaluation.startsWith('[AI Error]') ? 'error' : 'llm',
+      evaluation,
+    };
+  });
+};
+
+const toActionDossier = (items: ActionReviewItem[]): ActionDossierEntry[] =>
+  items.map((item) => ({
+    actorName: item.actorName,
+    title: item.actionName,
+    openness: item.openness,
+    source: item.source,
+    summary: item.evaluation
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0)?.replace(/^This turn:\s*/i, '') ?? item.evaluation,
+    intel: item.intel,
+  }));
+
+const describePlayerOutcome = (before: TurnSnapshot, after: TurnSnapshot): string => {
+  const capabilityDelta = after.capability - before.capability;
+  const safetyDelta = after.safety - before.safety;
+  const trustDelta = after.trust - before.trust;
+  const computeDelta = after.compute - before.compute;
+  const capitalDelta = after.capital - before.capital;
+  const globalDelta = after.globalSafety - before.globalSafety;
+
+  const momentumScore =
+    capabilityDelta +
+    safetyDelta +
+    trustDelta * 0.5 +
+    computeDelta * 0.2 +
+    capitalDelta * 0.15 +
+    globalDelta * 0.8;
+  const verdict = momentumScore >= 2.5 ? 'favorable' : momentumScore <= -2.5 ? 'rough' : 'mixed';
+
+  return `Your action outcome this turn is ${verdict}: capability ${signed(capabilityDelta)}, safety ${signed(
+    safetyDelta,
+  )}, soft power ${signed(trustDelta)}, compute ${signed(computeDelta)}, capital ${signed(
+    capitalDelta,
+  )}, global safety ${signed(globalDelta)}.`;
+};
+
+const buildTurnNarrativeEntries = (
+  turn: number,
+  before: TurnSnapshot,
+  after: TurnSnapshot,
+  orders: ActionChoice[],
+  playerDirective: string,
+  allChoices: Record<string, ActionChoice[]>,
+  afterState: GameState,
+  factionId: string,
+  turnLog: string[],
+): string[] => {
+  const entries: string[] = [];
+  const actionSummary = orders.length ? orders.map((order) => summarizeActionEffectiveness(order, before, after)).join(' ') : 'No explicit orders were set, so default strategy was executed.';
+  const playerOutcome = describePlayerOutcome(before, after);
+  const directiveOutcome = summarizeDirectiveOutcome(playerDirective, before, after);
+  const publicIntel = summarizePublicActionIntel(afterState, allChoices, factionId);
+
+  entries.push(`Turn ${turn}: ${actionSummary}`);
+  if (directiveOutcome) entries.push(directiveOutcome);
+  entries.push(playerOutcome);
+  if (publicIntel) entries.push(publicIntel);
+  for (const item of turnLog.slice(-4)) {
+    entries.push(`Notable: ${item}`);
+  }
+  return entries;
+};
+
+const buildTurnMechanicsExplanation = (
+  before: TurnSnapshot | null,
+  afterState: GameState,
+  factionId: string,
+  orders: ActionChoice[],
+  playerDirective: string,
+  allChoices: Record<string, ActionChoice[]>,
+  turnLog: string[] = [],
+): string => {
+  const after = captureTurnSnapshot(afterState, factionId);
+  const actionSummary = before && after && orders.length
+    ? orders.map((order) => summarizeActionEffectiveness(order, before, after)).join(' ')
+    : orders.length
+      ? orders.map((order) => summarizeActionMechanics(order)).join(' ')
+      : 'No explicit orders were set, so default strategy was executed.';
+
+  if (!before || !after) {
+    return `Turn ${afterState.turn}: ${actionSummary}`;
+  }
+
+  const playerOutcome = describePlayerOutcome(before, after);
+  const directiveOutcome = summarizeDirectiveOutcome(playerDirective, before, after);
+  const publicIntel = summarizePublicActionIntel(afterState, allChoices, factionId);
+
+  const net = [
+    `Capability ${signed(after.capability - before.capability)}`,
+    `Safety ${signed(after.safety - before.safety)}`,
+    `Soft Power ${signed(after.trust - before.trust)}`,
+    `Compute ${signed(after.compute - before.compute)}`,
+    `Capital ${signed(after.capital - before.capital)}`,
+    `Global Safety ${signed(after.globalSafety - before.globalSafety)}`,
+  ].join(' · ');
+
+  const notableOutcomes = turnLog.length
+    ? ` Notable outcomes: ${turnLog.slice(-4).join(' | ')}.`
+    : '';
+
+  const directiveSection = directiveOutcome ? ` ${directiveOutcome}` : '';
+  return `Turn ${afterState.turn} results: ${actionSummary}${directiveSection} ${playerOutcome} ${publicIntel} Net effects: ${net}.${notableOutcomes}`;
 };
 
 const collectNarrativeDirectives = async (): Promise<NarrativeDirective[]> => {
@@ -903,6 +1696,10 @@ const resolveEventChoice = (choiceId: string): void => {
   const resolvedEvent = pendingEvent;
   const resolvedChoice = choice;
   updateGamemasterNarrative(resolvedEvent, resolvedChoice);
+  turnNarrativeFeed = [
+    `Event resolved: ${resolvedEvent.title} -> ${resolvedChoice.label}.`,
+    ...turnNarrativeFeed,
+  ].slice(0, 24);
 
   pendingEvent = null;
   pendingEventChoices.clear();
@@ -919,8 +1716,12 @@ const triggerEvent = async (): Promise<void> => {
   eventHistory.push(event.id);
   playEvent(); // Sound for new event
   pendingEventChoices = new Map();
+  turnNarrativeFeed = [
+    `New event: ${event.title}. ${event.description}`,
+    ...turnNarrativeFeed,
+  ].slice(0, 24);
 
-  // Gamemaster introduces the event (D&D DM style)
+  // Analyst introduces the event
   gamemaster.introduceEvent(event, state, playerFactionId).then((intro) => {
     gamemasterNarrative = intro;
     gamemasterChatHistory = [
@@ -928,10 +1729,12 @@ const triggerEvent = async (): Promise<void> => {
       { role: 'assistant' as const, content: intro, timestamp: Date.now() },
     ];
     renderGamemasterPanelUI();
+    updateGamemasterModalState();
   }).catch(() => {
     // Fallback: use event description directly
     gamemasterNarrative = `${event.title} — ${event.description}`;
     renderGamemasterPanelUI();
+    updateGamemasterModalState();
   });
 
   const aiFactions = Object.keys(state.factions).filter((id) => id !== playerFactionId);
@@ -958,17 +1761,208 @@ const advance = async (): Promise<void> => {
   if (isAdvancing) return;
   isAdvancing = true;
   playAdvance();
+  setTurnAdvanceLoading(true, 'Collecting faction decisions...');
   try {
-    const directives = await collectNarrativeDirectives();
-    const choices: Record<string, ActionChoice[]> = {};
+    const beforeSnapshot = captureTurnSnapshot(state, playerFactionId);
+    const beforeSnapshotsByFaction = new Map<string, TurnSnapshot>();
     for (const factionId of Object.keys(state.factions)) {
-      if (factionId === playerFactionId) {
-        choices[factionId] = readPlayerOrders();
-      } else {
-        choices[factionId] = await decideActions(state, factionId, rng);
+      const snapshot = captureTurnSnapshot(state, factionId);
+      if (snapshot) beforeSnapshotsByFaction.set(factionId, snapshot);
+    }
+    const turnLogStart = state.log.length;
+    const playerDirectiveThisTurn = lockedDirectives
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .join(' | ');
+    const choices: Record<string, ActionChoice[]> = {};
+    let playerOrdersThisTurn = readPlayerOrders();
+
+    if (playerDirectiveThisTurn) {
+      setTurnAdvanceLoading(true, 'Interpreting your directive...');
+      const allowedActions = getPlayerAllowedActions();
+      const targets = getPlayerActionTargets();
+      const requestKey = ++directiveInterpretationRequestKey;
+      directiveInterpretationPending = true;
+      directiveInterpretationSource = 'fallback';
+      directiveInterpretationNote = 'Interpreting directive for this turn...';
+      render(state);
+
+      let interpretation: Awaited<ReturnType<Gamemaster['interpretDirectiveActions']>> | null = null;
+      try {
+        interpretation = await withRequestTimeout(
+          gamemaster.interpretDirectiveActions(
+            playerDirectiveThisTurn,
+            state,
+            playerFactionId,
+            allowedActions,
+            targets,
+            ACTION_POINTS_PER_TURN,
+          ),
+        );
+      } catch {
+        interpretation = null;
+      }
+
+      if (requestKey !== directiveInterpretationRequestKey) return;
+      directiveInterpretationPending = false;
+
+      if (!interpretation || !interpretation.orders.length || interpretation.source === 'error') {
+        directiveInterpretationSource = 'error';
+        const errorMessage = interpretation?.note?.trim() || '[AI Error] Unable to interpret directive. Check LLM and retry.';
+        directiveInterpretationNote = errorMessage;
+        state.log.push(errorMessage);
+        render(state);
+        return;
+      }
+
+      playerOrders = normalizeOrders(interpretation.orders);
+      playerOrdersThisTurn = [...playerOrders];
+      activeOrderIndex = 0;
+      directiveInterpretationSource = interpretation.source;
+      directiveInterpretationNote = interpretation.note;
+      state.log.push(`Action plan interpreted: ${summarizeOrdersForDirectiveNote(playerOrders, targets)}`);
+    }
+
+    const invalidTargetOrder = findInvalidTargetedOrder(playerOrdersThisTurn);
+    if (invalidTargetOrder) {
+      const actionName = getAction(invalidTargetOrder.actionId).name;
+      const warning = `Select a target for "${actionName}" before advancing.`;
+      state.log.push(warning);
+      turnNarrativeFeed = [warning, ...turnNarrativeFeed].slice(0, 24);
+      render(state);
+      return;
+    }
+    choices[playerFactionId] = playerOrdersThisTurn;
+    const directivePlanSummary = `Plan: ${summarizeOrdersForDirectiveNote(playerOrdersThisTurn)}`;
+
+    const directivesPromise = collectNarrativeDirectives();
+
+    // Diplomatic phase: AI factions exchange messages before deciding actions.
+    setTurnAdvanceLoading(true, 'Factions negotiating...');
+    setWorldMapStatus('Diplomatic phase — agents negotiating');
+    let negotiationRound: NegotiationExchange[] = [];
+    latestNegotiations = [];
+    try {
+      // Stream each agent's message onto the map as it arrives
+      negotiationRound = await runNegotiationPhase(state, playerFactionId, (exchange) => {
+        latestNegotiations = [...latestNegotiations, exchange];
+        renderWorldMapPanel();
+      });
+    } catch {
+      negotiationRound = [];
+    }
+    latestNegotiations = negotiationRound;
+    for (const exchange of negotiationRound) {
+      const fromName = state.factions[exchange.fromFactionId]?.name ?? exchange.fromFactionId;
+      const toName = state.factions[exchange.toFactionId]?.name ?? exchange.toFactionId;
+      state.log.push(`[Diplomacy] ${fromName} → ${toName}: ${exchange.message}`);
+      if (exchange.toFactionId === playerFactionId) {
+        appendFactionChatMessage(exchange.fromFactionId, {
+          role: 'assistant',
+          content: exchange.message,
+          timestamp: Date.now(),
+        });
       }
     }
-    resolveTurn(state, choices, rng);
+    if (negotiationRound.length) {
+      renderWorldMapPanel(); // show comms arcs while decisions are collected
+    }
+
+    // Alliance consent: alliances only form when the other side agrees.
+    setTurnAdvanceLoading(true, 'Resolving alliance proposals...');
+    setWorldMapStatus('Alliance proposals under review');
+
+    const recordConsentOutcome = (
+      proposerId: string,
+      targetId: string,
+      consent: { accept: boolean; reply: string },
+    ): void => {
+      const proposerName = state.factions[proposerId]?.name ?? proposerId;
+      const targetName = state.factions[targetId]?.name ?? targetId;
+      if (consent.accept) {
+        formAlliance(proposerId, targetId);
+        state.log.push(`[Diplomacy] 🤝 Alliance formed: ${proposerName} + ${targetName}.`);
+        turnNarrativeFeed = [`🤝 Alliance formed: ${proposerName} + ${targetName}.`, ...turnNarrativeFeed].slice(0, 24);
+      } else {
+        state.log.push(`[Diplomacy] ${targetName} declined an alliance with ${proposerName}.`);
+        turnNarrativeFeed = [`Alliance declined: ${targetName} turned down ${proposerName}.`, ...turnNarrativeFeed].slice(0, 24);
+      }
+      latestNegotiations = [
+        ...latestNegotiations,
+        {
+          turn: state.turn,
+          fromFactionId: targetId,
+          toFactionId: proposerId,
+          intent: consent.accept ? 'alliance_formed' : 'alliance_declined',
+          message: consent.reply,
+        },
+      ];
+      renderWorldMapPanel();
+    };
+
+    // AI -> AI proposals from the diplomatic phase
+    const aiProposals = negotiationRound.filter(
+      (exchange) =>
+        exchange.intent === 'propose_alliance'
+        && exchange.toFactionId !== playerFactionId
+        && !areAllied(exchange.fromFactionId, exchange.toFactionId),
+    );
+    for (const proposal of aiProposals) {
+      const consent = await requestAllianceConsent(
+        state,
+        proposal.fromFactionId,
+        proposal.toFactionId,
+        proposal.message,
+      );
+      recordConsentOutcome(proposal.fromFactionId, proposal.toFactionId, consent);
+    }
+
+    // Player form_alliance orders need the target's consent before they resolve
+    for (let index = 0; index < playerOrdersThisTurn.length; index += 1) {
+      const order = playerOrdersThisTurn[index];
+      if (order.actionId !== 'form_alliance' || !order.targetFactionId) continue;
+      if (areAllied(playerFactionId, order.targetFactionId)) continue;
+      const consent = await requestAllianceConsent(
+        state,
+        playerFactionId,
+        order.targetFactionId,
+        playerDirectiveThisTurn || 'We propose a formal alliance between our organizations.',
+      );
+      appendFactionChatMessage(order.targetFactionId, {
+        role: 'assistant',
+        content: consent.reply,
+        timestamp: Date.now(),
+      });
+      recordConsentOutcome(playerFactionId, order.targetFactionId, consent);
+      // The alliance (when accepted) is formed by the consent flow; either way
+      // the action slot is repurposed so the engine doesn't form it unilaterally.
+      playerOrdersThisTurn[index] = { actionId: 'research_capabilities', openness: 'open' };
+    }
+    choices[playerFactionId] = playerOrdersThisTurn;
+
+    setTurnAdvanceLoading(true, 'Collecting faction decisions...');
+    setWorldMapStatus('Action phase — agents deciding');
+    const aiFactionIds = Object.keys(state.factions).filter((factionId) => factionId !== playerFactionId);
+    const aiChoices = await Promise.all(
+      aiFactionIds.map(async (factionId) => ({
+        factionId,
+        actions: await decideActions(state, factionId, rng, {
+          playerCommsContext: [
+            buildFactionDecisionContext(factionId),
+            buildNegotiationContext(negotiationRound, state, factionId),
+          ].filter(Boolean).join('\n') || undefined,
+        }),
+      })),
+    );
+    for (const aiChoice of aiChoices) {
+      choices[aiChoice.factionId] = aiChoice.actions;
+    }
+
+    setTurnAdvanceLoading(true, 'Resolving outcomes...');
+    setWorldMapStatus('Resolving quarter');
+    resolveTurn(state, choices, rng, playerFactionId);
+    setWorldMapStatus(null);
+    const turnLog = state.log.slice(turnLogStart);
 
     // Record turn advance to gamemaster history
     gamemaster.recordEvent({
@@ -976,18 +1970,122 @@ const advance = async (): Promise<void> => {
       type: 'turn_advanced',
     });
 
-    // Gamemaster narrates the turn (D&D DM style turn summary)
-    const turnLog = [...state.log];
-    gamemaster.narrateTurnSummary(state, playerFactionId, turnLog).then((summary) => {
-      gamemasterNarrative = summary;
-      gamemasterChatHistory = [
-        ...gamemasterChatHistory,
-        { role: 'assistant' as const, content: summary, timestamp: Date.now() },
-      ];
-      renderGamemasterPanelUI();
-    }).catch(() => {
-      // Keep existing narrative on error
+    const mechanicsExplanation = buildTurnMechanicsExplanation(
+      beforeSnapshot,
+      state,
+      playerFactionId,
+      playerOrdersThisTurn,
+      playerDirectiveThisTurn,
+      choices,
+      turnLog,
+    );
+    const afterSnapshot = captureTurnSnapshot(state, playerFactionId);
+    let playerNetDeltas: ActionReviewRequest['netDeltas'] | undefined;
+    if (beforeSnapshot && afterSnapshot) {
+      const entries = buildTurnNarrativeEntries(
+        state.turn,
+        beforeSnapshot,
+        afterSnapshot,
+        playerOrdersThisTurn,
+        playerDirectiveThisTurn,
+        choices,
+        state,
+        playerFactionId,
+        turnLog,
+      );
+      playerNetDeltas = buildTurnNetDeltas(beforeSnapshot, afterSnapshot);
+      turnNarrativeFeed = [directivePlanSummary, ...entries, ...turnNarrativeFeed].slice(0, 24);
+    } else {
+      turnNarrativeFeed = [directivePlanSummary, `Turn ${state.turn}: ${mechanicsExplanation}`, ...turnNarrativeFeed].slice(0, 24);
+    }
+
+    const actionReviewDrafts = buildTurnActionReviewDrafts(choices, state, state.turn);
+    const deterministicReviewItems = buildDeterministicActionReviewItems(
+      actionReviewDrafts,
+      playerDirectiveThisTurn,
+      playerNetDeltas,
+    );
+    latestActionReviewItems = deterministicReviewItems;
+    pendingActionReviewItems = [...deterministicReviewItems];
+    if (deterministicReviewItems.length > 0) {
+      const publicCount = deterministicReviewItems.filter((item) => item.visibility === 'public').length;
+      const privateCount = deterministicReviewItems.length - publicCount;
+      turnNarrativeFeed = [
+        `Action review ready: ${deterministicReviewItems.length} entries (${publicCount} public, ${privateCount} private).`,
+        ...turnNarrativeFeed,
+      ].slice(0, 24);
+      render(state);
+    }
+    const reviewGenerationKey = ++actionReviewGenerationKey;
+    void (async () => {
+      const actionReviewItems = await narrateActionReviewItems(
+        actionReviewDrafts,
+        state,
+        beforeSnapshotsByFaction,
+        turnLog,
+        playerDirectiveThisTurn,
+        playerNetDeltas,
+      );
+      if (reviewGenerationKey !== actionReviewGenerationKey) return;
+      const merged = actionReviewItems.map((item, index) => {
+        if (item.source === 'error') {
+          const deterministic = deterministicReviewItems[index];
+          if (deterministic) {
+            return {
+              ...deterministic,
+              source: 'error' as const,
+              evaluation: item.evaluation,
+            };
+          }
+        }
+        return item;
+      });
+      latestActionReviewItems = merged;
+      const keepPendingQueue = pendingActionReviewItems.length > 0;
+      pendingActionReviewItems = keepPendingQueue ? [...merged] : [];
+      turnNarrativeFeed = ['Analyst finished action-by-action review.', ...turnNarrativeFeed].slice(0, 24);
+      render(state);
+    })();
+
+    // Analyst response is LLM-first; deterministic mechanics is fallback only.
+    const playerActions = playerOrdersThisTurn.map((order) => {
+      const action = getAction(order.actionId);
+      return `${action.name} (${order.openness})`;
     });
+    if (playerDirectiveThisTurn) {
+      playerActions.push(`Directive: ${playerDirectiveThisTurn}`);
+    }
+    const diceRoll = Math.floor(rng() * 20) + 1;
+    gamemasterLoading = true;
+    renderGamemasterPanelUI();
+    updateGamemasterModalState();
+    void (async () => {
+      try {
+        const summary = await withRequestTimeout(
+          gamemaster.narrateTurnSummary(state, playerFactionId, turnLog, playerActions, diceRoll),
+        );
+        const analystText = summary?.trim()
+          ? summary
+          : '[AI Error] Analyst turn summary unavailable for this turn.';
+        gamemasterNarrative = analystText;
+        turnNarrativeFeed = [`Analyst: ${analystText}`, ...turnNarrativeFeed].slice(0, 24);
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'assistant' as const, content: analystText, timestamp: Date.now() },
+        ];
+      } catch {
+        gamemasterNarrative = '[AI Error] Analyst turn summary request failed. Check proxy/model and retry.';
+        turnNarrativeFeed = [`Analyst: ${gamemasterNarrative}`, ...turnNarrativeFeed].slice(0, 24);
+        gamemasterChatHistory = [
+          ...gamemasterChatHistory,
+          { role: 'assistant' as const, content: gamemasterNarrative, timestamp: Date.now() },
+        ];
+      } finally {
+        gamemasterLoading = false;
+        renderGamemasterPanelUI();
+        updateGamemasterModalState();
+      }
+    })();
 
     // Play victory/defeat sounds and record statistics
     if (state.gameOver) {
@@ -1008,6 +2106,8 @@ const advance = async (): Promise<void> => {
         playDefeat();
       }
     }
+
+    const directives = await directivesPromise;
 
     if (directives.length) {
       for (const directive of directives) {
@@ -1034,8 +2134,29 @@ const advance = async (): Promise<void> => {
       commsFeed = [...commsFeed, ...lines].slice(-40);
     }
 
-    if (narrativeDirective) {
-      narrativeDirective = '';
+    if (!state.gameOver) {
+      const inbound = generateProactiveComms(state, playerFactionId, rng, lastInboundTurnByFaction);
+      for (const message of inbound) {
+        const targetName = state.factions[message.fromFactionId]?.name ?? message.fromFactionId;
+        appendFactionChatMessage(message.fromFactionId, {
+          role: 'assistant',
+          content: message.content,
+          timestamp: Date.now(),
+        });
+
+        const isChatOpen = Boolean(factionChatModalOverlay);
+        const isViewingThread = isChatOpen && selectedChatFactionId === message.fromFactionId;
+        if (!isViewingThread) factionCommsUnreadCount += 1;
+
+        turnNarrativeFeed = [`Inbound comms (${targetName}): ${message.content}`, ...turnNarrativeFeed].slice(0, 24);
+      }
+      if (inbound.length) {
+        updateFactionChatModalState();
+      }
+    }
+
+    if (lockedDirectives.length > 0 || narrativeDirective) {
+      clearDirectiveQueue();
       renderOrdersSection();
     }
 
@@ -1044,6 +2165,8 @@ const advance = async (): Promise<void> => {
 
     render(state);
   } finally {
+    setTurnAdvanceLoading(false);
+    setWorldMapStatus(null);
     isAdvancing = false;
   }
 };
@@ -1054,6 +2177,8 @@ const reset = (): void => {
   state = createInitialState();
   playerFactionId = 'us_lab_a';
   focusFactionId = playerFactionId;
+  grantPlayerStartingResearch();
+  normalizeResearchForAllFactions();
   if (autoStart) {
     campaignStarted = true;
     startOverlay?.classList.add('is-hidden');
@@ -1062,29 +2187,30 @@ const reset = (): void => {
     startOverlay?.classList.remove('is-hidden');
   }
   endgameOverlay?.classList.add('is-hidden');
-  techSearchTerm = '';
   selectedTechId = null;
-  // Reset player orders to defaults
-  playerOrders = [
-    { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
-    { actionId: 'research_capabilities', openness: 'open', targetFactionId: undefined },
-  ];
-  // Reset narrative directive
-  narrativeDirective = '';
+  directiveInterpretationRequestKey += 1;
+  directiveInterpretationPending = false;
+  resetPlayerOrdersForFaction();
+  clearDirectiveQueue();
   pendingEvent = null;
   pendingEventChoices.clear();
+  selectedMapFactionId = null;
+  latestNegotiations = [];
+  resetWorldMapView();
+  newAgentGame(); // fresh persistent-agent sessions for all factions
   eventHistory = [];
   commsFeed = [];
-  // Destroy and recreate tech tree controller on reset
-  if (techTreeController) {
-    techTreeController.destroy();
-    techTreeController = null;
-  }
-  if (tabbedTechTreeController) {
-    tabbedTechTreeController.destroy();
-    tabbedTechTreeController = null;
-  }
-  // Reset gamemaster state
+  factionChatHistory.clear();
+  factionChatLoading = false;
+  factionCommsUnreadCount = 0;
+  lastInboundTurnByFaction.clear();
+  closeFactionChatModal();
+  turnNarrativeFeed = [];
+  latestActionReviewItems = [];
+  pendingActionReviewItems = [];
+  actionReviewGenerationKey += 1;
+  actionReviewModalInstance?.close(false);
+  setTurnAdvanceLoading(false);
   gamemasterChatHistory = [];
   gamemasterNarrative = '';
   gamemasterLoading = false;
@@ -1099,47 +2225,22 @@ const reset = (): void => {
 
 // Bind player faction selector change handler
 const bindPlayerFactionHandler = () => {
-  // Use event delegation on the orders container since the select may be recreated
   ordersContainer?.addEventListener('change', (event) => {
     const target = event.target as HTMLElement;
     if (target.id === 'playerFaction') {
       const value = (target as HTMLSelectElement).value;
       playerFactionId = value || playerFactionId;
       focusFactionId = playerFactionId;
-      // Destroy tech tree controllers so they recreate for new faction
-      if (techTreeController) {
-        techTreeController.destroy();
-        techTreeController = null;
-      }
-      if (tabbedTechTreeController) {
-        tabbedTechTreeController.destroy();
-        tabbedTechTreeController = null;
-      }
+      directiveInterpretationRequestKey += 1;
+      directiveInterpretationPending = false;
+      resetPlayerOrdersForFaction();
+      clearDirectiveQueue();
+      ensureSelectedChatFaction();
+      updateFactionChatModalState();
       renderPlayerControls();
       render(state);
     }
   });
-};
-
-const bindFocusHandlers = () => {
-  // Faction list click handlers are now handled by the FactionCard component callbacks
-  // The onFocusChange callback is passed to renderFactionList
-};
-
-// Tab switching for main screens (DEPRECATED - tabs removed in new layout)
-let activeMainTab = 'actions';
-
-const bindTabHandlers = () => {
-  // Tabs have been removed in the new fixed layout
-  // This function is kept for backward compatibility but does nothing
-};
-
-// Bind action panel handlers for the new fixed layout
-// NOTE: Most action panel handlers are now in the ExpandedCommandCenter component callbacks
-const bindActionsPanelHandlers = () => {
-  // Legacy handlers - these elements no longer exist in the new 2-column layout
-  // All actions are now handled by the ExpandedCommandCenter component callbacks
-  // Keeping this function for initialization order compatibility
 };
 
 // Open the Gamemaster modal
@@ -1159,12 +2260,12 @@ const openGamemasterModal = (): void => {
 
       try {
         // Get response from gamemaster using askQuestion
-        const response = await gamemaster.askQuestion(message, state);
+        const response = await withRequestTimeout(gamemaster.askQuestion(message, state));
         gamemasterChatHistory.push({ role: 'assistant', content: response, timestamp: Date.now() });
       } catch (error) {
         gamemasterChatHistory.push({
           role: 'assistant',
-          content: 'I apologize, but I encountered an error. Please try again.',
+          content: '[AI Error] Analyst LLM request failed. Check proxy/model and retry.',
           timestamp: Date.now(),
         });
       }
@@ -1181,19 +2282,19 @@ const openGamemasterModal = (): void => {
         switch (action) {
           case 'what-should-i-do':
             gamemasterChatHistory.push({ role: 'user', content: 'What should I focus on this turn?', timestamp: Date.now() });
-            response = await gamemaster.getStrategicAdvice(state, playerFactionId);
+            response = await withRequestTimeout(gamemaster.getStrategicAdvice(state, playerFactionId));
             break;
           case 'explain-safety':
             gamemasterChatHistory.push({ role: 'user', content: 'Explain how safety works in this game.', timestamp: Date.now() });
-            response = await gamemaster.explainMechanics('safety');
+            response = await withRequestTimeout(gamemaster.explainMechanics('safety'));
             break;
           case 'explain-capability':
             gamemasterChatHistory.push({ role: 'user', content: 'Explain how capability progression works.', timestamp: Date.now() });
-            response = await gamemaster.explainMechanics('capability');
+            response = await withRequestTimeout(gamemaster.explainMechanics('capability'));
             break;
           case 'get-summary':
             gamemasterChatHistory.push({ role: 'user', content: 'Give me a summary of the current game state.', timestamp: Date.now() });
-            response = await gamemaster.getGameSummary(state);
+            response = await withRequestTimeout(gamemaster.getGameSummary(state));
             break;
           default:
             response = 'I do not understand that request.';
@@ -1202,7 +2303,7 @@ const openGamemasterModal = (): void => {
       } catch (error) {
         gamemasterChatHistory.push({
           role: 'assistant',
-          content: 'I apologize, but I encountered an error. Please try again.',
+          content: '[AI Error] Analyst LLM request failed. Check proxy/model and retry.',
           timestamp: Date.now(),
         });
       }
@@ -1233,6 +2334,101 @@ const updateGamemasterModalState = (): void => {
       state,
     });
   }
+};
+
+const ensureSelectedChatFaction = (): void => {
+  const targets = getFactionChatTargets();
+  if (!targets.length) {
+    selectedChatFactionId = '';
+    return;
+  }
+  if (!targets.some((target) => target.id === selectedChatFactionId)) {
+    selectedChatFactionId = targets[0].id;
+  }
+};
+
+const updateFactionChatModalState = (): void => {
+  if (!factionChatModalOverlay) return;
+  ensureSelectedChatFaction();
+  updateFactionChatModal(factionChatModalOverlay, {
+    targets: getFactionChatTargets(),
+    selectedTargetId: selectedChatFactionId,
+    messages: selectedChatFactionId ? getChatHistoryForFaction(selectedChatFactionId) : [],
+    isLoading: factionChatLoading,
+  });
+};
+
+const closeFactionChatModal = (): void => {
+  if (!factionChatModalOverlay) return;
+  hideFactionChatModal(factionChatModalOverlay);
+  factionChatModalOverlay = null;
+};
+
+const openFactionChatModal = (): void => {
+  if (factionChatModalOverlay) return;
+  ensureSelectedChatFaction();
+  const targets = getFactionChatTargets();
+  if (!targets.length) return;
+
+  factionCommsUnreadCount = 0;
+  render(state);
+
+  factionChatModalOverlay = showFactionChatModal({
+    targets,
+    selectedTargetId: selectedChatFactionId,
+    messages: getChatHistoryForFaction(selectedChatFactionId),
+    isLoading: factionChatLoading,
+    onSelectTarget: (targetId: string) => {
+      selectedChatFactionId = targetId;
+      updateFactionChatModalState();
+    },
+    onSendMessage: async (message: string) => {
+      if (!selectedChatFactionId) return;
+
+      appendFactionChatMessage(selectedChatFactionId, {
+        role: 'user',
+        content: message,
+        timestamp: Date.now(),
+      });
+      factionChatLoading = true;
+      updateFactionChatModalState();
+
+      try {
+        const reply = await getFactionChatReply(
+          state,
+          playerFactionId,
+          selectedChatFactionId,
+          message,
+          getChatHistoryForFaction(selectedChatFactionId),
+        );
+        appendFactionChatMessage(selectedChatFactionId, {
+          role: 'assistant',
+          content: reply,
+          timestamp: Date.now(),
+        });
+        const targetName = state.factions[selectedChatFactionId]?.name ?? selectedChatFactionId;
+        commsFeed = [
+          ...commsFeed,
+          {
+            factionId: selectedChatFactionId,
+            speaker: targetName,
+            text: reply,
+          },
+        ].slice(-40);
+      } catch {
+        appendFactionChatMessage(selectedChatFactionId, {
+          role: 'assistant',
+          content: 'Comms link dropped. Repeat your request next quarter.',
+          timestamp: Date.now(),
+        });
+      } finally {
+        factionChatLoading = false;
+        updateFactionChatModalState();
+        renderCommsPanel();
+      }
+    },
+    onClose: closeFactionChatModal,
+  });
 };
 
 // Open the Tech Tree modal
@@ -1274,6 +2470,9 @@ const toggleTechTreeModal = (): void => {
 // Render the Command Center
 const renderCommandCenter = (): void => {
   if (!commandCenterContainer) return;
+  const normalizedOrders = normalizeOrders(playerOrders);
+  playerOrders = normalizedOrders;
+  const allowedActions = getPlayerAllowedActions();
 
   const commandCenter = renderExpandedCommandCenter(
     {
@@ -1282,8 +2481,14 @@ const renderCommandCenter = (): void => {
       campaignStarted,
       hasPendingEvent: !!pendingEvent,
       pendingEventCount: pendingEvent ? 1 : 0,
-      directiveText: narrativeDirective,
-      recentLog: state.log.slice(-5),
+      directiveText: directiveDraft,
+      fullLogEntries: state.log,
+      narrativeFeed: turnNarrativeFeed.slice(0, 10),
+      actionDossier: toActionDossier(latestActionReviewItems),
+      pendingActionReviewCount: pendingActionReviewItems.length,
+      lockedDirectives: [...lockedDirectives],
+      allowedActions,
+      commsUnreadCount: factionCommsUnreadCount,
     },
     {
       onAdvanceTurn: () => {
@@ -1291,13 +2496,21 @@ const renderCommandCenter = (): void => {
           advance();
         }
       },
-      onDirectiveSubmit: (text: string) => {
-        narrativeDirective = text;
-        state.log.push(`Directive: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-        render(state);
+      onDirectiveSubmit: submitDirective,
+      onEditLockedDirective: (index) => {
+        editLockedDirective(index);
+      },
+      onRemoveLockedDirective: (index) => {
+        removeLockedDirective(index);
       },
       onOpenTechTree: openTechTreeModal,
       onOpenGamemaster: openGamemasterModal,
+      onOpenFactionChat: openFactionChatModal,
+      onOpenActionReview: () => {
+        const source = pendingActionReviewItems.length ? pendingActionReviewItems : latestActionReviewItems;
+        if (!source.length) return;
+        void openActionReviewFlow(source, pendingActionReviewItems.length > 0);
+      },
       onEventClick: () => {
         if (pendingEvent && eventModalInstance && !eventModalInstance.isOpen()) {
           eventModalInstance.open(pendingEvent);
@@ -1307,8 +2520,7 @@ const renderCommandCenter = (): void => {
       onStats: () => {},
       onHelp: () => {},
       onSuggestedAction: (responseText: string) => {
-        narrativeDirective = responseText;
-        render(state);
+        submitDirective(responseText);
       },
     }
   );
@@ -1316,122 +2528,97 @@ const renderCommandCenter = (): void => {
   commandCenterContainer.replaceChildren(commandCenter);
 };
 
-// Event delegation for advance button (backup for when addEventListener gets lost on re-render)
+// Event delegation for advance button (primary click handler - survives replaceChildren re-renders)
 if (commandCenterContainer) {
   commandCenterContainer.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('command-center__advance-btn') && !target.hasAttribute('disabled')) {
-      if (campaignStarted && !state.gameOver && !pendingEvent) {
+    const target = (e.target as HTMLElement).closest('.command-center__advance-btn') as HTMLElement;
+    if (target && !target.hasAttribute('disabled')) {
+      if (pendingEvent) {
+        if (eventModalInstance && !eventModalInstance.isOpen()) {
+          eventModalInstance.open(pendingEvent);
+        }
+      } else if (campaignStarted && !state.gameOver) {
         advance();
-      } else if (pendingEvent && eventModalInstance && !eventModalInstance.isOpen()) {
-        eventModalInstance.open(pendingEvent);
       }
     }
   });
 }
 
-// Update action panel UI state
-const updateActionsPanelUI = () => {
-  // Update turn label
-  if (actionsTurnLabel) {
-    actionsTurnLabel.textContent = `${state.year} Q${state.quarter}`;
-  }
+const startCampaign = async (): Promise<void> => {
+  campaignStarted = true;
+  ensureSelectedChatFaction();
+  directiveInterpretationRequestKey += 1;
+  directiveInterpretationPending = false;
+  resetPlayerOrdersForFaction();
+  grantPlayerStartingResearch();
+  normalizeResearchForAllFactions();
+  introSequenceInstance?.close();
+  startOverlay?.classList.add('is-hidden');
+  endgameOverlay?.classList.add('is-hidden');
+  setActiveOrderRow(0);
+  renderPlayerControls();
+  render(state);
 
-  // Update turn number
-  if (actionsTurnNum) {
-    const turn = (state.year - 2026) * 4 + state.quarter;
-    actionsTurnNum.textContent = `Turn ${turn}`;
-  }
+  // Record game start for statistics
+  recordGameStart(playerFactionId);
 
-  // Update advance button state
-  if (advanceQuarterBtn) {
-    const canAdvance = campaignStarted && !state.gameOver && !pendingEvent;
-    (advanceQuarterBtn as HTMLButtonElement).disabled = !canAdvance;
-    advanceQuarterBtn.textContent = !campaignStarted
-      ? 'Select Faction'
-      : pendingEvent
-        ? 'Resolve Event'
-        : state.gameOver
-          ? 'Campaign Ended'
-          : 'Advance Quarter';
+  // Generate opening briefing from the analyst
+  gamemasterLoading = true;
+  renderGamemasterPanelUI();
+  updateGamemasterModalState();
+  try {
+    const openingNarration = await withRequestTimeout(
+      gamemaster.generateOpeningNarration(state, playerFactionId),
+    );
+    gamemasterNarrative = openingNarration;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: openingNarration, timestamp: Date.now() },
+    ];
+  } catch {
+    gamemasterNarrative = `The year is ${state.year}. The race for AGI has begun. Choose your path wisely.`;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: gamemasterNarrative, timestamp: Date.now() },
+    ];
   }
+  gamemasterLoading = false;
+  renderGamemasterPanelUI();
+  updateGamemasterModalState();
 
-  // Update event badge
-  if (eventBadge && eventBadgeCount) {
-    if (pendingEvent) {
-      eventBadge.classList.remove('is-hidden');
-      eventBadgeCount.textContent = '1';
-    } else {
-      eventBadge.classList.add('is-hidden');
-    }
+  // Start tutorial for new players
+  if (!hasTutorialCompleted()) {
+    setTimeout(() => startTutorial(), 500);
   }
 };
 
 const renderStartOverlay = () => {
-  if (!startOverlay || !startOptions || !startGameButton) return;
+  if (!startOverlay) return;
   if (autoStart) {
     campaignStarted = true;
     startOverlay.classList.add('is-hidden');
     endgameOverlay?.classList.add('is-hidden');
     return;
   }
-  campaignStarted = false;
-  startOptions.innerHTML = '';
-  const factions = Object.values(state.factions);
-  for (const faction of factions) {
-    const option = document.createElement('div');
-    option.className = 'overlay__option';
-    if (faction.id === playerFactionId) option.classList.add('is-selected');
-    option.textContent = `${faction.name} · ${faction.type.toUpperCase()}`;
-    option.dataset.faction = faction.id;
-    option.addEventListener('click', () => {
-      playerFactionId = faction.id;
-      focusFactionId = faction.id;
-      renderStartOverlay();
+
+  if (!introSequenceInstance) {
+    introSequenceInstance = new IntroSequence(startOverlay, {
+      onComplete: (selectedFactionId: string) => {
+        playerFactionId = selectedFactionId;
+        focusFactionId = selectedFactionId;
+        void startCampaign();
+      },
+      onSkip: () => {},
     });
-    startOptions.appendChild(option);
   }
 
-  startGameButton.onclick = async () => {
-    campaignStarted = true;
-    startOverlay.classList.add('is-hidden');
-    endgameOverlay?.classList.add('is-hidden');
-    setActiveOrderRow(0);
-    renderPlayerControls();
-    render(state);
-
-    // Record game start for statistics
-    recordGameStart(playerFactionId);
-
-    // Generate opening narration from the Gamemaster (D&D-style intro)
-    gamemasterLoading = true;
-    renderGamemasterPanelUI();
-    try {
-      const openingNarration = await gamemaster.generateOpeningNarration(state, playerFactionId);
-      gamemasterNarrative = openingNarration;
-      gamemasterChatHistory = [
-        ...gamemasterChatHistory,
-        { role: 'assistant' as const, content: openingNarration, timestamp: Date.now() },
-      ];
-    } catch {
-      gamemasterNarrative = `The year is ${state.year}. The race for AGI has begun. Choose your path wisely.`;
-      gamemasterChatHistory = [
-        ...gamemasterChatHistory,
-        { role: 'assistant' as const, content: gamemasterNarrative, timestamp: Date.now() },
-      ];
-    }
-    gamemasterLoading = false;
-    renderGamemasterPanelUI();
-
-    // Start tutorial for new players
-    if (!hasTutorialCompleted()) {
-      setTimeout(() => startTutorial(), 500);
-    }
-  };
+  campaignStarted = false;
+  endgameOverlay?.classList.add('is-hidden');
+  startOverlay.classList.remove('is-hidden');
+  introSequenceInstance.open({
+    showBriefing: IntroSequence.shouldShow(),
+  });
 };
-
-// Event bindings are now handled by the GlobalDashboard component callbacks
-// and the OrdersPanel component callbacks
 
 // Keyboard shortcuts
 let shortcutsOverlayVisible = false;
@@ -1453,6 +2640,7 @@ const createShortcutsOverlay = (): HTMLElement => {
         <div class="shortcut-row"><kbd>Tab</kbd><span>Statistics</span></div>
         <div class="shortcut-row"><kbd>R</kbd><span>Reset game</span></div>
         <div class="shortcut-row"><kbd>T</kbd><span>Open Tech Tree</span></div>
+        <div class="shortcut-row"><kbd>C</kbd><span>Open faction comms</span></div>
         <div class="shortcut-row"><kbd>M</kbd><span>Toggle sound</span></div>
         <div class="shortcut-row"><kbd>G</kbd><span>Cycle game speed</span></div>
         <div class="shortcut-row"><kbd>B</kbd><span>Toggle light/dark theme</span></div>
@@ -1500,6 +2688,10 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
   // Escape to close overlays
   if (key === 'escape') {
     event.preventDefault();
+    if (factionChatModalOverlay) {
+      closeFactionChatModal();
+      return;
+    }
     // Close tech tree modal first if open
     if (techTreeModalInstance?.isOpen()) {
       closeTechTreeModal();
@@ -1518,16 +2710,6 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
 
   // Don't process other shortcuts if overlays are open
   if (!campaignStarted || state.gameOver || shortcutsOverlayVisible) {
-    // Allow enter to start game
-    if ((key === 'enter' || key === ' ') && !campaignStarted && !shortcutsOverlayVisible) {
-      event.preventDefault();
-      campaignStarted = true;
-      startOverlay?.classList.add('is-hidden');
-      endgameOverlay?.classList.add('is-hidden');
-      setActiveOrderRow(0);
-      renderPlayerControls();
-      render(state);
-    }
     return;
   }
 
@@ -1570,6 +2752,7 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
       if (loadedState) {
         playLoad();
         state = loadedState;
+        normalizeResearchForAllFactions();
         state.log.push('Game loaded from quicksave slot.');
         render(state);
       } else {
@@ -1604,6 +2787,11 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
       toggleTechTreeModal();
       break;
 
+    case 'c':
+      event.preventDefault();
+      openFactionChatModal();
+      break;
+
     case 'b':
       event.preventDefault();
       toggleTheme();
@@ -1619,6 +2807,7 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
     showSaveManager(state, {
       onLoad: (loadedState) => {
         state = loadedState;
+        normalizeResearchForAllFactions();
         render(state);
       },
       onClose: () => {},
@@ -1650,6 +2839,14 @@ const toggleTheme = (): void => {
 
 // Inject Command Center and Tech Tree Modal styles
 const injectCommandCenterStyles = (): void => {
+  // Inject Intro Sequence styles
+  if (!document.getElementById('intro-sequence-styles')) {
+    const introStyle = document.createElement('style');
+    introStyle.id = 'intro-sequence-styles';
+    introStyle.textContent = INTRO_SEQUENCE_STYLES;
+    document.head.appendChild(introStyle);
+  }
+
   // Inject Tech Tree Modal styles
   if (!document.getElementById('tech-tree-modal-styles')) {
     const techTreeStyle = document.createElement('style');
@@ -1703,11 +2900,9 @@ if (gearMenuBtn && gearMenu) {
 }
 
 injectGamemasterModalStyles(); // Inject modal styles
+injectFactionChatModalStyles(); // Inject faction chat modal styles
 injectCommandCenterStyles(); // Inject command center and tech tree modal styles
 initEventModal(); // Initialize event modal
-bindFocusHandlers();
-bindTabHandlers();
-bindActionsPanelHandlers();
 bindPlayerFactionHandler();
 renderStartOverlay();
 renderPlayerControls();
@@ -1732,8 +2927,30 @@ const renderGameToText = (): string => {
     selectedTechId,
     globalSafety: round1(state.globalSafety),
     narrativeDirective: narrativeDirective || null,
+    lockedDirectives: [...lockedDirectives],
+    directiveDraft: directiveDraft || null,
+    directiveInterpretation: {
+      note: directiveInterpretationNote,
+      source: directiveInterpretationSource,
+      pending: directiveInterpretationPending,
+    },
+    playerOrders: normalizeOrders(playerOrders).map((order) => ({
+      actionId: order.actionId,
+      openness: order.openness,
+      targetFactionId: order.targetFactionId ?? null,
+    })),
     pendingEvent: pendingEvent ? { id: pendingEvent.id, title: pendingEvent.title } : null,
+    actionReview: {
+      pendingCount: pendingActionReviewItems.length,
+      lastCount: latestActionReviewItems.length,
+      open: actionReviewModalInstance?.isOpen() ?? false,
+    },
     commsCount: commsFeed.length,
+    factionChat: {
+      open: Boolean(factionChatModalOverlay),
+      selectedTargetId: selectedChatFactionId || null,
+      threadCount: selectedChatFactionId ? getChatHistoryForFaction(selectedChatFactionId).length : 0,
+    },
     coordSystem: 'origin top-left, +x right, +y down',
     factions: Object.values(state.factions).map((faction) => ({
       id: faction.id,

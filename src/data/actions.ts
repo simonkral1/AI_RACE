@@ -96,14 +96,14 @@ export const ACTIONS: ActionDefinition[] = [
   // NEW EXPANDED ACTIONS
   // ============================================================
 
-  // Hire Talent - increase talent resource
+  // Build Cyber Workforce - increase cybersecurity capacity
   {
     id: 'hire_talent',
-    name: 'Hire Talent',
+    name: 'Build Cyber Workforce',
     kind: 'hire_talent',
     allowedFor: ['lab'],
     baseResearch: {},
-    baseResourceDelta: { capital: -8, talent: 10 },
+    baseResourceDelta: { capital: -8, cybersecurity: 10 },
     exposure: 0,
   },
 
@@ -237,7 +237,7 @@ export const ACTIONS: ActionDefinition[] = [
     allowedFor: ['lab'],
     factionSpecific: 'cn_lab',
     baseResearch: { capabilities: 10 },
-    baseResourceDelta: { compute: 15, data: 8 },
+    baseResourceDelta: { compute: 15, cybersecurity: 8 },
     exposure: 0,
   },
 

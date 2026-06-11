@@ -85,7 +85,7 @@ export const generateDialogue = async (
       { role: 'system', content: 'You are an in-world comms channel. Output JSON only.' },
       { role: 'user', content: JSON.stringify(payload) },
     ],
-    { maxTokens: 220, temperature: 0.7, topP: 0.85 },
+    { maxTokens: 220, temperature: 0.7, topP: 0.85, timeoutMs: 1200, reasoningEffort: 'none' },
   );
 
   if (!content) return fallbackDialogue(state, directives);

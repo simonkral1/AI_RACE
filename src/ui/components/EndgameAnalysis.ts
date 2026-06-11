@@ -57,7 +57,7 @@ const OUTCOME_TITLES: Record<string, { title: string; subtitle: string; icon: st
   },
   public_trust: {
     title: 'Victory: Public Champion',
-    subtitle: 'Through trust and transparency, you won the hearts and minds of the public!',
+    subtitle: 'Through soft power and transparency, you won the hearts and minds of the public!',
     icon: '🤝',
   },
   regulatory: {
@@ -87,7 +87,7 @@ const OUTCOME_TITLES: Record<string, { title: string; subtitle: string; icon: st
   },
   collapse: {
     title: 'Defeat: Public Collapse',
-    subtitle: 'Loss of public trust destroyed your organization.',
+    subtitle: 'Loss of soft power destroyed your organization.',
     icon: '🏚️',
   },
   coup: {
@@ -195,7 +195,7 @@ export function renderEndgameAnalysis(
   if (faction) {
     summaryGrid.appendChild(createStatCard('Your Capability', `${faction.capabilityScore.toFixed(0)}`));
     summaryGrid.appendChild(createStatCard('Your Safety', `${faction.safetyScore.toFixed(0)}`));
-    summaryGrid.appendChild(createStatCard('Your Trust', `${faction.resources.trust.toFixed(0)}`));
+    summaryGrid.appendChild(createStatCard('Your Soft Power', `${faction.resources.trust.toFixed(0)}`));
     summaryGrid.appendChild(createStatCard('Techs Unlocked', `${faction.unlockedTechs.size}`));
   }
 
@@ -296,7 +296,7 @@ function renderFinalStandings(state: GameState, playerFactionId: string): HTMLEl
   // Header
   const thead = createElement('thead');
   const headerRow = createElement('tr');
-  ['Rank', 'Faction', 'Type', 'Capability', 'Safety', 'Trust'].forEach(text => {
+  ['Rank', 'Faction', 'Type', 'Capability', 'Safety', 'Soft Power'].forEach(text => {
     const th = createElement('th', { textContent: text });
     headerRow.appendChild(th);
   });
@@ -370,11 +370,11 @@ function generateAnalysis(
     items.push({ text: 'Your safety practices were dangerously low.', type: 'negative' });
   }
 
-  // Trust analysis
+  // Soft-power analysis
   if (faction.resources.trust >= 80) {
-    items.push({ text: 'You maintained excellent public trust throughout.', type: 'positive' });
+    items.push({ text: 'You maintained excellent soft power throughout.', type: 'positive' });
   } else if (faction.resources.trust < 40) {
-    items.push({ text: 'Public trust in your organization eroded significantly.', type: 'negative' });
+    items.push({ text: 'Soft power in your organization eroded significantly.', type: 'negative' });
   }
 
   // Global safety analysis

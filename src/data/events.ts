@@ -143,7 +143,7 @@ export const EVENTS: EventDefinition[] = [
         description: 'Ignore the competition. Execution beats intelligence.',
         effects: [
           { kind: 'research', target: 'faction', branch: 'capabilities', delta: 10 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 2 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 2 },
         ],
       },
     ],
@@ -178,11 +178,11 @@ export const EVENTS: EventDefinition[] = [
         ],
       },
       {
-        id: 'talent_investment',
-        label: 'Invest in talent',
+        id: 'cybersecurity_investment',
+        label: 'Invest in cybersecurity',
         description: 'Spend big to recruit the best researchers in the world.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 6 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 6 },
           { kind: 'resource', target: 'faction', key: 'capital', delta: -6 },
         ],
       },
@@ -200,10 +200,10 @@ export const EVENTS: EventDefinition[] = [
       {
         id: 'ride_the_wave',
         label: 'Ride the hype',
-        description: 'Use the attention to attract talent and funding.',
+        description: 'Use the attention to attract cybersecurity and funding.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: 6 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 3 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 3 },
           { kind: 'resource', target: 'faction', key: 'trust', delta: -2 },
         ],
       },
@@ -403,7 +403,7 @@ export const EVENTS: EventDefinition[] = [
         label: 'Hire safety team',
         description: 'Use the capital to expand alignment headcount.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 5 },
           { kind: 'score', target: 'faction', key: 'safetyScore', delta: 4 },
         ],
       },

@@ -596,7 +596,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 2,
     cost: 22,
     prereqs: ['ops_basic_security'],
-    effects: [{ kind: 'resource', key: 'data', delta: 6 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 6 }],
     description: 'AI 2027: AI-generated high-quality training data',
   },
 
@@ -750,7 +750,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 1,
     cost: 14,
     prereqs: [],
-    effects: [{ kind: 'resource', key: 'talent', delta: 5 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 5 }],
     description: 'Recruiting and onboarding ML engineering talent',
   },
   {
@@ -760,7 +760,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 1,
     cost: 16,
     prereqs: ['tal_ml_hiring'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 4 }, { kind: 'stat', key: 'safetyCulture', delta: 1 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 4 }, { kind: 'stat', key: 'safetyCulture', delta: 1 }],
     description: 'Environment fostering breakthrough research',
   },
   {
@@ -770,7 +770,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 2,
     cost: 20,
     prereqs: ['tal_research_culture'],
-    effects: [{ kind: 'safety', delta: 4 }, { kind: 'resource', key: 'talent', delta: 3 }],
+    effects: [{ kind: 'safety', delta: 4 }, { kind: 'resource', key: 'cybersecurity', delta: 3 }],
     description: 'AI 2027: Separate team focused on alignment research',
   },
   {
@@ -780,7 +780,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 2,
     cost: 24,
     prereqs: ['tal_ml_hiring'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 6 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 6 }],
     description: 'Recruiting top-tier AI researchers from academia and competitors',
   },
   {
@@ -790,7 +790,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 2,
     cost: 18,
     prereqs: ['tal_research_culture'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 5 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 5 }],
     description: 'Upskilling existing employees on frontier techniques',
   },
   {
@@ -800,7 +800,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 3,
     cost: 26,
     prereqs: ['tal_elite_researchers', 'tal_internal_training'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 6 }, { kind: 'capability', delta: 2 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 6 }, { kind: 'capability', delta: 2 }],
     description: 'AI tools augmenting human researcher productivity',
   },
   {
@@ -810,7 +810,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 3,
     cost: 28,
     prereqs: ['tal_safety_team', 'tal_internal_training'],
-    effects: [{ kind: 'safety', delta: 5 }, { kind: 'resource', key: 'talent', delta: 4 }],
+    effects: [{ kind: 'safety', delta: 5 }, { kind: 'resource', key: 'cybersecurity', delta: 4 }],
     description: 'Dedicated track for training alignment researchers',
   },
   {
@@ -820,7 +820,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 4,
     cost: 35,
     prereqs: ['tal_ai_assisted_research'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 8 }, { kind: 'capability', delta: 3 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 8 }, { kind: 'capability', delta: 3 }],
     description: 'AI 2027: Integrated teams of humans and AI researchers',
   },
   {
@@ -830,7 +830,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 4,
     cost: 32,
     prereqs: ['tal_elite_researchers'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 7 }, { kind: 'resource', key: 'influence', delta: 3 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 7 }, { kind: 'resource', key: 'influence', delta: 3 }],
     description: 'International research collaborations and partnerships',
   },
   {
@@ -840,7 +840,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 5,
     cost: 45,
     prereqs: ['tal_human_ai_teams'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 10 }, { kind: 'capability', delta: 5 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 10 }, { kind: 'capability', delta: 5 }],
     description: 'AI 2027: 200K parallel AI researcher instances',
   },
   {
@@ -850,7 +850,7 @@ export const TECH_TREE_EXPANDED: ExtendedTechNode[] = [
     tier: 5,
     cost: 48,
     prereqs: ['tal_automated_researchers', 'tal_global_talent_network'],
-    effects: [{ kind: 'resource', key: 'talent', delta: 12 }],
+    effects: [{ kind: 'resource', key: 'cybersecurity', delta: 12 }],
     description: 'Brain-computer interfaces augmenting human researchers',
   },
 ];

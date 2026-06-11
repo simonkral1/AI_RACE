@@ -88,7 +88,7 @@ const createChatArea = (
   if (messages.length === 0 && !isLoading) {
     const emptyState = div({
       className: 'gm-modal-chat__empty',
-      text: 'Ask the Gamemaster about game mechanics, strategy, or the current situation.',
+      text: 'Ask the Analyst for mechanics, strategy, and situational assessment.',
     });
     chatArea.appendChild(emptyState);
   } else {
@@ -151,7 +151,7 @@ const createInputSection = (
     className: 'gm-modal-input',
     attrs: {
       type: 'text',
-      placeholder: 'Ask the Gamemaster...',
+      placeholder: 'Ask the Analyst...',
       disabled: isLoading,
     },
   }) as HTMLInputElement;
@@ -192,7 +192,7 @@ const createHeader = (onClose: () => void): HTMLElement => {
 
   const title = span({
     className: 'gm-modal-header__title',
-    text: 'GAMEMASTER',
+    text: 'STRATEGIC ANALYST',
   });
 
   const closeBtn = button({

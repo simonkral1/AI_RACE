@@ -1,5 +1,6 @@
 // TechTree component - Main horizontal tech tree container
 import type { TechNode as TechNodeType, FactionState, BranchId } from '../../core/types.js';
+import { getUnifiedResearchPool } from '../../core/research.js';
 import { el, div, span, BRANCH_COLORS, formatNum } from './base.js';
 import {
   createTechNode,
@@ -19,11 +20,12 @@ const BRANCH_META: Record<BranchId, { title: string; subtitle: string }> = {
   capabilities: { title: 'CAPABILITIES', subtitle: 'Research & Development' },
   safety: { title: 'SAFETY', subtitle: 'Alignment & Robustness' },
   ops: { title: 'OPERATIONS', subtitle: 'Infrastructure & Scale' },
+  hardPower: { title: 'HARD POWER', subtitle: 'Military & Deterrence' },
   policy: { title: 'POLICY', subtitle: 'Governance & Diplomacy' },
 };
 
 // Branch order for display
-const BRANCH_ORDER: BranchId[] = ['capabilities', 'safety', 'ops', 'policy'];
+const BRANCH_ORDER: BranchId[] = ['capabilities', 'safety', 'ops', 'hardPower', 'policy'];
 
 export interface TechTreeCallbacks extends TechNodeCallbacks {
   onBranchFilter?: (branch: BranchId | null) => void;
@@ -281,6 +283,7 @@ function createProgressCards(
   const progressEl = div({
     className: 'tech-screen__progress',
   });
+  const researchPool = getUnifiedResearchPool(faction);
 
   BRANCH_ORDER.forEach((branch) => {
     const branchNodes = nodes.filter((n) => n.branch === branch);
@@ -289,8 +292,6 @@ function createProgressCards(
     ).length;
     const totalCount = branchNodes.length;
     const progressPercent = totalCount > 0 ? (unlockedCount / totalCount) * 100 : 0;
-    const branchProgress = faction.research[branch] || 0;
-
     const meta = BRANCH_META[branch];
     const branchColor = BRANCH_COLORS[branch];
 
@@ -314,7 +315,7 @@ function createProgressCards(
         }),
         div({
           className: 'tech-progress-card__meta',
-          html: `<strong>${unlockedCount}/${totalCount}</strong> techs | <strong>${formatNum(branchProgress)}</strong> RP`,
+          html: `<strong>${unlockedCount}/${totalCount}</strong> techs | <strong>${formatNum(researchPool)}</strong> RP`,
         }),
       ],
     });

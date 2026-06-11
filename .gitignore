@@ -16,3 +16,9 @@
 .env
 .env.*
 !.env.example
+
+# runtime logs / agent artifacts
+/.runlogs/
+/.vite.agent.log
+/.vite.agent.pid
+/test-results/

@@ -6,7 +6,7 @@
  * - SAFETY: Alignment issues, interpretability, deception detection
  * - GEOPOLITICAL: Chip wars, international tensions, summits
  * - ECONOMIC: Market dynamics, compute scarcity, automation
- * - LAB_DRAMA: Talent, leadership, mergers, whistleblowers
+ * - LAB_DRAMA: Cybersecurity, leadership, mergers, whistleblowers
  */
 
 import type { BranchId, GameState, ResourceKey } from '../core/types.js';
@@ -107,7 +107,7 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
         description: 'Dedicate resources to rapidly implementing the breakthrough.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'compute', delta: -5 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -3 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -3 },
           { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 8 },
         ],
       },
@@ -235,7 +235,7 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
         description: 'Let the AI lead research direction.',
         effects: [
           { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 15 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -4 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -4 },
           { kind: 'score', target: 'faction', key: 'safetyScore', delta: -6 },
         ],
       },
@@ -314,10 +314,10 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
     ],
   },
   {
-    id: 'training_data_gold',
-    title: 'Training Data Gold Mine',
+    id: 'training_cybersecurity_gold',
+    title: 'Training Cybersecurity Gold Mine',
     description:
-      'A massive new dataset becomes available. Quality is exceptional, but provenance is questionable.',
+      'A massive new cybersecurityset becomes available. Quality is exceptional, but provenance is questionable.',
     category: 'capability',
     weight: 1.0,
     cooldown: 5,
@@ -325,9 +325,9 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
       {
         id: 'use_it_all',
         label: 'Use everything',
-        description: 'Train on the full dataset regardless of source.',
+        description: 'Train on the full cybersecurityset regardless of source.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'data', delta: 10 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 10 },
           { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 6 },
           { kind: 'resource', target: 'faction', key: 'trust', delta: -4 },
         ],
@@ -335,16 +335,16 @@ const CAPABILITY_EVENTS: ExpandedEventDefinition[] = [
       {
         id: 'filtered_use',
         label: 'Filter carefully',
-        description: 'Use only verified portions of the dataset.',
+        description: 'Use only verified portions of the cybersecurityset.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'data', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 5 },
           { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 3 },
         ],
       },
       {
         id: 'pass_opportunity',
         label: 'Pass on it',
-        description: 'Too risky. Stick with verified data.',
+        description: 'Too risky. Stick with verified cybersecurity.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'trust', delta: 3 },
           { kind: 'stat', target: 'faction', key: 'safetyCulture', delta: 2 },
@@ -994,7 +994,7 @@ const GEOPOLITICAL_EVENTS: ExpandedEventDefinition[] = [
       {
         id: 'support_sanctions',
         label: 'Support sanctions',
-        description: 'Cut their access to compute and talent.',
+        description: 'Cut their access to compute and cybersecurity.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'influence', delta: 5 },
           { kind: 'globalSafety', delta: 2 },
@@ -1129,9 +1129,9 @@ const ECONOMIC_EVENTS: ExpandedEventDefinition[] = [
   },
   {
     id: 'energy_crisis',
-    title: 'Datacenter Energy Crisis',
+    title: 'Cybersecuritycenter Energy Crisis',
     description:
-      'Grid operators are limiting power to AI datacenters. Your training runs are being throttled.',
+      'Grid operators are limiting power to AI cybersecuritycenters. Your training runs are being throttled.',
     category: 'economic',
     weight: 1.0,
     cooldown: 6,
@@ -1181,7 +1181,7 @@ const ECONOMIC_EVENTS: ExpandedEventDefinition[] = [
         label: 'Aggressive cost cutting',
         description: 'Reduce headcount and slow expansion.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -5 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -5 },
           { kind: 'resource', target: 'faction', key: 'capital', delta: 8 },
         ],
       },
@@ -1322,16 +1322,16 @@ const ECONOMIC_EVENTS: ExpandedEventDefinition[] = [
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: 5 },
           { kind: 'score', target: 'faction', key: 'safetyScore', delta: 5 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 3 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 3 },
         ],
       },
     ],
   },
   {
-    id: 'synthetic_data_costs',
-    title: 'Synthetic Data Economics',
+    id: 'synthetic_cybersecurity_costs',
+    title: 'Synthetic Cybersecurity Economics',
     description:
-      'Generating quality synthetic training data is getting expensive. Real data is running out.',
+      'Generating quality synthetic training cybersecurity is getting expensive. Real cybersecurity is running out.',
     category: 'economic',
     weight: 0.85,
     cooldown: 5,
@@ -1339,27 +1339,27 @@ const ECONOMIC_EVENTS: ExpandedEventDefinition[] = [
     choices: [
       {
         id: 'invest_synthetic',
-        label: 'Invest in synthetic data',
-        description: 'Build out synthetic data generation infrastructure.',
+        label: 'Invest in synthetic cybersecurity',
+        description: 'Build out synthetic cybersecurity generation infrastructure.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: -8 },
-          { kind: 'resource', target: 'faction', key: 'data', delta: 8 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 8 },
         ],
       },
       {
-        id: 'license_data',
-        label: 'License real data',
-        description: 'Pay for access to proprietary datasets.',
+        id: 'license_cybersecurity',
+        label: 'License real cybersecurity',
+        description: 'Pay for access to proprietary cybersecuritysets.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: -6 },
-          { kind: 'resource', target: 'faction', key: 'data', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 5 },
           { kind: 'resource', target: 'faction', key: 'trust', delta: 2 },
         ],
       },
       {
         id: 'efficiency_focus',
-        label: 'Data efficiency research',
-        description: 'Learn to do more with less data.',
+        label: 'Cybersecurity efficiency research',
+        description: 'Learn to do more with less cybersecurity.',
         effects: [
           { kind: 'research', target: 'faction', branch: 'capabilities', delta: 10 },
           { kind: 'score', target: 'faction', key: 'capabilityScore', delta: 3 },
@@ -1370,19 +1370,19 @@ const ECONOMIC_EVENTS: ExpandedEventDefinition[] = [
 ];
 
 // ============================================================================
-// LAB DRAMA EVENTS - Talent, leadership, mergers
+// LAB DRAMA EVENTS - Cybersecurity, leadership, mergers
 // ============================================================================
 
 const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
   {
-    id: 'talent_defection',
-    title: 'Key Talent Defection',
+    id: 'cybersecurity_defection',
+    title: 'Key Cybersecurity Defection',
     description:
       'Your star researcher is leaving for a competitor. They know your most advanced techniques.',
     category: 'lab_drama',
     weight: 1.1,
     cooldown: 5,
-    conditions: [{ kind: 'minResource', key: 'talent', threshold: 15 }],
+    conditions: [{ kind: 'minResource', key: 'cybersecurity', threshold: 15 }],
     choices: [
       {
         id: 'counter_offer',
@@ -1390,7 +1390,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         description: 'Offer whatever it takes to keep them.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: -8 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 2 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 2 },
         ],
       },
       {
@@ -1407,7 +1407,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         label: 'Wish them well',
         description: 'Maintain good relationships in the industry.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -4 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -4 },
           { kind: 'resource', target: 'faction', key: 'trust', delta: 3 },
         ],
       },
@@ -1509,7 +1509,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         description: 'Combine forces and resources.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'compute', delta: 12 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 8 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 8 },
           { kind: 'resource', target: 'faction', key: 'influence', delta: -5 },
         ],
       },
@@ -1519,7 +1519,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         description: 'Push for acquisition instead of merger.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: -15 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 10 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 10 },
           { kind: 'resource', target: 'faction', key: 'compute', delta: 8 },
         ],
       },
@@ -1559,7 +1559,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         label: 'Hire replacements quickly',
         description: 'Find new safety researchers who fit the culture.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -3 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -3 },
           { kind: 'resource', target: 'faction', key: 'capital', delta: -5 },
         ],
       },
@@ -1568,7 +1568,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         label: 'Reduce safety team',
         description: 'Safety was overstaffed anyway.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -5 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -5 },
           { kind: 'resource', target: 'faction', key: 'capital', delta: 5 },
           { kind: 'score', target: 'faction', key: 'safetyScore', delta: -8 },
         ],
@@ -1656,8 +1656,8 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
     ],
   },
   {
-    id: 'talent_poaching_spree',
-    title: 'Talent War',
+    id: 'cybersecurity_poaching_spree',
+    title: 'Cybersecurity War',
     description:
       'Competitors are aggressively poaching your engineers. Salaries are skyrocketing.',
     category: 'lab_drama',
@@ -1667,10 +1667,10 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
       {
         id: 'match_offers',
         label: 'Match all offers',
-        description: 'Pay whatever it takes to retain talent.',
+        description: 'Pay whatever it takes to retain cybersecurity.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: -10 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 2 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 2 },
         ],
       },
       {
@@ -1678,7 +1678,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         label: 'Emphasize mission',
         description: 'Attract people who believe in the work.',
         effects: [
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -2 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -2 },
           { kind: 'stat', target: 'faction', key: 'safetyCulture', delta: 3 },
           { kind: 'resource', target: 'faction', key: 'trust', delta: 2 },
         ],
@@ -1689,7 +1689,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         description: 'Aggressively recruit from competitors.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'capital', delta: -8 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 5 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 5 },
           { kind: 'resource', target: 'faction', key: 'trust', delta: -3 },
         ],
       },
@@ -1707,10 +1707,10 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
       {
         id: 'open_research',
         label: 'Embrace open research',
-        description: 'Publish more to attract top talent.',
+        description: 'Publish more to attract top cybersecurity.',
         effects: [
           { kind: 'resource', target: 'faction', key: 'trust', delta: 5 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: 3 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: 3 },
           { kind: 'stat', target: 'faction', key: 'opsec', delta: -4 },
         ],
       },
@@ -1720,7 +1720,7 @@ const LAB_DRAMA_EVENTS: ExpandedEventDefinition[] = [
         description: 'Keep advantages secret.',
         effects: [
           { kind: 'stat', target: 'faction', key: 'opsec', delta: 5 },
-          { kind: 'resource', target: 'faction', key: 'talent', delta: -3 },
+          { kind: 'resource', target: 'faction', key: 'cybersecurity', delta: -3 },
         ],
       },
       {

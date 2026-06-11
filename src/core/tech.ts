@@ -1,26 +1,29 @@
 import { TECH_TREE } from '../data/techTree.js';
+import { isTechAvailableForFaction } from './techAccess.js';
+import { getUnifiedResearchPool, spendUnifiedResearch } from './research.js';
 import { FactionState, TechEffect, TechNode } from './types.js';
 import { applyResourceDelta, applyScoreDelta, applyStatDelta } from './stats.js';
 
-const byBranch = (branch: TechNode['branch']) => TECH_TREE.filter((node) => node.branch === branch);
+const byBranch = (branch: TechNode['branch'], faction: FactionState) =>
+  TECH_TREE.filter((node) => node.branch === branch && isTechAvailableForFaction(node, faction));
 
 const prereqsMet = (faction: FactionState, node: TechNode): boolean =>
   node.prereqs.every((id) => faction.unlockedTechs.has(id));
 
 export const unlockAvailableTechs = (faction: FactionState): string[] => {
   const unlocked: string[] = [];
-  const branches: TechNode['branch'][] = ['capabilities', 'safety', 'ops', 'policy'];
+  const branches: TechNode['branch'][] = ['capabilities', 'safety', 'ops', 'hardPower', 'policy'];
 
   for (const branch of branches) {
     let progress = true;
     while (progress) {
       progress = false;
-      const nodes = byBranch(branch).filter(
+      const nodes = byBranch(branch, faction).filter(
         (node) => !faction.unlockedTechs.has(node.id) && prereqsMet(faction, node),
       );
-      const affordable = nodes.find((node) => faction.research[branch] >= node.cost);
+      const affordable = nodes.find((node) => getUnifiedResearchPool(faction) >= node.cost);
       if (!affordable) continue;
-      faction.research[branch] -= affordable.cost;
+      if (!spendUnifiedResearch(faction, affordable.cost)) continue;
       faction.unlockedTechs.add(affordable.id);
       applyTechEffects(faction, affordable.effects);
       unlocked.push(affordable.id);

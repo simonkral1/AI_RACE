@@ -22,12 +22,14 @@ export const createInitialState = (): GameState => {
         capabilities: 0,
         safety: 0,
         ops: 0,
+        hardPower: 0,
         policy: 0,
       },
       canDeployAgi: false,
       // New expanded resources - use template values or defaults
       publicOpinion: template.publicOpinion ?? (template.type === 'government' ? 50 : template.resources.trust),
       securityLevel: template.securityLevel ?? (template.type === 'government' ? 3 : 2),
+      hardPower: template.hardPower ?? (template.type === 'government' ? 70 : 25),
     };
   }
 

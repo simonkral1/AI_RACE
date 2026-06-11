@@ -4,8 +4,29 @@ import { ACTIONS } from '../data/actions.js';
 import { FACTION_TEMPLATES } from '../data/factions.js';
 import { callLlm } from './llmClient.js';
 import { extractJsonSnippet } from './llmParsing.js';
+import { agentDecide } from './agentClient.js';
 
 const TARGET_REQUIRED = new Set(['espionage', 'subsidize', 'regulate']);
+const DEFAULT_GAMEMASTER_MODEL = 'google/gemini-3-flash';
+const DEFAULT_GAMEMASTER_TIMEOUT_MS = 20_000;
+
+export type DecisionContext = {
+  playerCommsContext?: string;
+};
+
+/**
+ * Use the same model config as the gamemaster/narrator
+ * This ensures consistent AI behavior across narration and faction decisions
+ */
+const readGamemasterModel = (): string => {
+  try {
+    const envModel = (import.meta as { env?: Record<string, string> }).env?.VITE_GAMEMASTER_MODEL;
+    if (envModel && envModel.trim()) return envModel.trim();
+  } catch {
+    // No-op for runtimes without import.meta.env
+  }
+  return DEFAULT_GAMEMASTER_MODEL;
+};
 
 
 const getFactionStrategy = (factionId: string) => {
@@ -15,7 +36,12 @@ const getFactionStrategy = (factionId: string) => {
 
 const formatNumber = (value: number): number => Math.round(value * 10) / 10;
 
-const buildPrompt = (state: GameState, factionId: string, allowedActions: ActionDefinition[]): string => {
+const buildPrompt = (
+  state: GameState,
+  factionId: string,
+  allowedActions: ActionDefinition[],
+  context?: DecisionContext,
+): string => {
   const faction = state.factions[factionId];
   const targets = Object.values(state.factions)
     .filter((f) => f.id !== factionId)
@@ -69,6 +95,7 @@ const buildPrompt = (state: GameState, factionId: string, allowedActions: Action
       safetyScore: formatNumber(faction.safetyScore),
       exposure: formatNumber(faction.exposure),
       canDeployAgi: faction.canDeployAgi,
+      hardPower: formatNumber(faction.hardPower),
       research: faction.research,
       unlockedTechs: Array.from(faction.unlockedTechs),
     },
@@ -79,6 +106,9 @@ const buildPrompt = (state: GameState, factionId: string, allowedActions: Action
       'If unsure, prioritize safety when globalSafety is low.',
       'Secret actions increase exposure; high exposure can trigger detection penalties.',
     ],
+    playerCommsContext: context?.playerCommsContext ?? null,
+    roleBoundary:
+      'You are the faction decision engine, not the Gamemaster. Produce action decisions only.',
   };
 
   return `You are a strategy game AI.\n\n${JSON.stringify(payload)}`;
@@ -118,33 +148,66 @@ const normalizeChoices = (
     });
   }
 
-  return normalized.slice(0, ACTION_POINTS_PER_TURN);
+  const trimmed = normalized.slice(0, ACTION_POINTS_PER_TURN);
+  const faction = state.factions[factionId];
+  const fallback: ActionChoice =
+    faction?.type === 'government'
+      ? { actionId: 'policy', openness: 'open' }
+      : { actionId: 'research_capabilities', openness: 'open' };
+
+  while (trimmed.length < ACTION_POINTS_PER_TURN) {
+    trimmed.push({ ...fallback });
+  }
+
+  return trimmed;
 };
 
 export const decideActionsWithLlm = async (
   state: GameState,
   factionId: string,
+  context?: DecisionContext,
 ): Promise<ActionChoice[] | null> => {
   const faction = state.factions[factionId];
   if (!faction) return null;
 
-  const allowed = ACTIONS.filter((action) => action.allowedFor.includes(faction.type));
+  // form_alliance is excluded: AI alliances form through the diplomatic
+  // consent flow (propose_alliance intent), never unilaterally.
+  const allowed = ACTIONS.filter(
+    (action) => action.allowedFor.includes(faction.type) && action.id !== 'form_alliance',
+  );
   const allowedSet = new Set(allowed.map((action) => action.id));
-  const prompt = buildPrompt(state, factionId, allowed);
+  const prompt = buildPrompt(state, factionId, allowed, context);
+  const gamemasterModel = readGamemasterModel();
+
+  // Primary path: the faction's persistent Claude agent (Sonnet, medium effort)
+  const agentOutput = await agentDecide(factionId, prompt);
+  if (agentOutput) {
+    const normalized = normalizeChoices(agentOutput, allowedSet, factionId, state);
+    if (normalized.length) return normalized;
+  }
 
   try {
     const content = await callLlm(
       [
         {
           role: 'system',
-          content: 'You are a strategy game AI. Output JSON only, no markdown, no code fences, no extra keys.',
+          content:
+            'You are a faction decision engine for AGI Race. Output JSON only; never narrate, roleplay, or explain.',
         },
         {
           role: 'user',
           content: prompt,
         },
       ],
-      { maxTokens: 220, temperature: 0.7, topP: 0.8 },
+      {
+        model: gamemasterModel,
+        maxTokens: 220,
+        temperature: 0.6,
+        topP: 0.8,
+        timeoutMs: DEFAULT_GAMEMASTER_TIMEOUT_MS,
+        reasoningEffort: 'low',
+        responseFormat: { type: 'json_object' },
+      },
     );
     if (!content) return null;
 

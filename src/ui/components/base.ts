@@ -194,6 +194,7 @@ export const BRANCH_COLORS: Record<string, { primary: string; glow: string }> = 
   capabilities: { primary: '#e26d5a', glow: 'rgba(226, 109, 90, 0.3)' },
   safety: { primary: '#6ec7a2', glow: 'rgba(110, 199, 162, 0.3)' },
   ops: { primary: '#5a9de2', glow: 'rgba(90, 157, 226, 0.3)' },
+  hardPower: { primary: '#d07a2d', glow: 'rgba(208, 122, 45, 0.3)' },
   policy: { primary: '#c79af5', glow: 'rgba(199, 154, 245, 0.3)' },
 };
 

@@ -11,11 +11,11 @@ const COMPARISON_STATS: { key: string; label: string; getter: (f: FactionState) 
   { key: 'capabilityScore', label: 'Capability', getter: f => f.capabilityScore, color: '#b84c42' },
   { key: 'safetyScore', label: 'Safety', getter: f => f.safetyScore, color: '#3d7a3a' },
   { key: 'compute', label: 'Compute', getter: f => f.resources.compute, color: '#5a9de2' },
-  { key: 'talent', label: 'Talent', getter: f => f.resources.talent, color: '#8ac06c' },
+  { key: 'cybersecurity', label: 'Cybersecurity', getter: f => f.resources.cybersecurity, color: '#8ac06c' },
   { key: 'capital', label: 'Capital', getter: f => f.resources.capital, color: '#f6c06a' },
-  { key: 'data', label: 'Data', getter: f => f.resources.data, color: '#c79af5' },
   { key: 'influence', label: 'Influence', getter: f => f.resources.influence, color: '#e26d5a' },
-  { key: 'trust', label: 'Trust', getter: f => f.resources.trust, color: '#6ec7a2' },
+  { key: 'trust', label: 'Soft Power', getter: f => f.resources.trust, color: '#6ec7a2' },
+  { key: 'hardPower', label: 'Hard Power', getter: f => f.hardPower, color: '#c79af5' },
   { key: 'safetyCulture', label: 'Safety Culture', getter: f => f.safetyCulture, color: '#6ec7a2' },
   { key: 'opsec', label: 'OPSEC', getter: f => f.opsec, color: '#7d9182' },
 ];
@@ -78,9 +78,9 @@ function createComparisonRadarChart(
   }
   svg.appendChild(gridGroup);
 
-  // Resource axes (6 resources)
-  const resources: ResourceKey[] = ['compute', 'talent', 'capital', 'data', 'influence', 'trust'];
-  const labels = ['Compute', 'Talent', 'Capital', 'Data', 'Influence', 'Trust'];
+  // Resource axes
+  const resources: ResourceKey[] = ['compute', 'cybersecurity', 'capital', 'influence', 'trust'];
+  const labels = ['Compute', 'Cyber', 'Capital', 'Influence', 'Soft'];
   const n = resources.length;
   const angleStep = (2 * Math.PI) / n;
   const startAngle = -Math.PI / 2;
@@ -287,9 +287,9 @@ function createComparisonAnalysis(
   const compLeader = factions.reduce((a, b) => a.resources.compute > b.resources.compute ? a : b);
   leaders.push({ category: 'Compute', leader: compLeader, value: compLeader.resources.compute });
 
-  // Trust leader
+  // Soft-power leader
   const trustLeader = factions.reduce((a, b) => a.resources.trust > b.resources.trust ? a : b);
-  leaders.push({ category: 'Trust', leader: trustLeader, value: trustLeader.resources.trust });
+  leaders.push({ category: 'Soft Power', leader: trustLeader, value: trustLeader.resources.trust });
 
   const list = div({ className: 'comparison-analysis__list' });
 
@@ -398,7 +398,7 @@ export function renderFactionComparison(
 
   // Only show key stats
   const keyStats = COMPARISON_STATS.filter(s =>
-    ['capabilityScore', 'safetyScore', 'compute', 'trust', 'influence'].includes(s.key)
+    ['capabilityScore', 'safetyScore', 'compute', 'trust', 'hardPower', 'influence'].includes(s.key)
   );
 
   for (const stat of keyStats) {

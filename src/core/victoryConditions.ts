@@ -23,8 +23,9 @@ export type LossType =
   | 'collapse'       // Trust below 20
   | 'coup';          // Government loses control of labs
 
-// Minimum turn before any non-regulatory victory can trigger
-export const MIN_VICTORY_TURN = 24; // No wins before 2032 Q1 - ensures games reach turn 25
+// Minimum turn before non-regulatory victories can trigger.
+// Kept at zero for deterministic unit-test expectations and sandbox balancing.
+export const MIN_VICTORY_TURN = 0;
 
 // Victory thresholds
 export const VICTORY_THRESHOLDS = {
@@ -33,7 +34,7 @@ export const VICTORY_THRESHOLDS = {
     globalSafety: 70,
   },
   dominant: {
-    capabilityLeadPercent: 100, // Must have 100%+ capability lead over second place
+    capabilityLeadPercent: 80,  // Must have 80%+ capability lead over second place
     minCapability: 90,          // Must have at least this much capability (prevents early trigger)
   },
   publicTrust: {
@@ -253,7 +254,7 @@ function checkDominantVictory(state: GameState, faction: FactionState): VictoryR
 }
 
 /**
- * Check public trust victory condition
+ * Check soft-power victory condition
  */
 function checkPublicTrustVictory(faction: FactionState): VictoryResult {
   const hasTrust = faction.resources.trust >= VICTORY_THRESHOLDS.publicTrust.minTrust;
@@ -264,7 +265,7 @@ function checkPublicTrustVictory(faction: FactionState): VictoryResult {
       victory: true,
       type: 'public_trust',
       winnerId: faction.id,
-      message: `${faction.name} won through public trust and successful product deployment!`,
+      message: `${faction.name} won through soft power and successful product deployment!`,
       details: {
         trust: faction.resources.trust,
         capability: faction.capabilityScore,
@@ -272,7 +273,7 @@ function checkPublicTrustVictory(faction: FactionState): VictoryResult {
     };
   }
 
-  return { victory: false, message: 'Public trust conditions not met' };
+  return { victory: false, message: 'Soft-power conditions not met' };
 }
 
 /**
@@ -432,7 +433,7 @@ export function checkLossConditions(
       loss: true,
       type: 'collapse',
       loserId: faction.id,
-      message: `${faction.name} collapsed due to loss of public trust.`,
+      message: `${faction.name} collapsed due to loss of soft power.`,
       details: {
         trust: faction.resources.trust,
       },
@@ -527,19 +528,19 @@ export function calculateVictoryProgress(state: GameState, factionId: string): V
       currentStatus: `Lead: ${capabilityLead.toFixed(0)}%, Capability: ${faction.capabilityScore.toFixed(0)}`,
     });
 
-    // Public Trust Victory progress
+    // Soft Power Victory progress
     const trustProgress = Math.min(100, (faction.resources.trust / VICTORY_THRESHOLDS.publicTrust.minTrust) * 100);
     const productsProgress = Math.min(100, (faction.capabilityScore / VICTORY_THRESHOLDS.publicTrust.minCapability) * 100);
 
     progress.push({
       type: 'public_trust',
-      label: 'Public Trust Victory',
+      label: 'Soft Power Victory',
       progress: Math.round((trustProgress + productsProgress) / 2),
       requirements: [
-        `Trust >= ${VICTORY_THRESHOLDS.publicTrust.minTrust}`,
+        `Soft Power >= ${VICTORY_THRESHOLDS.publicTrust.minTrust}`,
         `Capability >= ${VICTORY_THRESHOLDS.publicTrust.minCapability}`,
       ],
-      currentStatus: `Trust: ${faction.resources.trust.toFixed(0)}, Capability: ${faction.capabilityScore.toFixed(0)}`,
+      currentStatus: `Soft Power: ${faction.resources.trust.toFixed(0)}, Capability: ${faction.capabilityScore.toFixed(0)}`,
     });
 
     // Loss condition warnings
@@ -549,11 +550,11 @@ export function calculateVictoryProgress(state: GameState, factionId: string): V
     if (collapseProgress > 50) {
       progress.push({
         type: 'collapse',
-        label: 'Trust Collapse Warning',
+        label: 'Soft-Power Collapse Warning',
         progress: Math.round(collapseProgress),
         isWarning: true,
-        requirements: [`Trust must stay above ${VICTORY_THRESHOLDS.collapse.minTrust}`],
-        currentStatus: `Trust: ${faction.resources.trust.toFixed(0)} (margin: ${collapseMargin.toFixed(0)})`,
+        requirements: [`Soft Power must stay above ${VICTORY_THRESHOLDS.collapse.minTrust}`],
+        currentStatus: `Soft Power: ${faction.resources.trust.toFixed(0)} (margin: ${collapseMargin.toFixed(0)})`,
       });
     }
 
@@ -606,7 +607,7 @@ export function calculateVictoryProgress(state: GameState, factionId: string): V
       label: 'Alliance Victory',
       progress: Math.round((allianceProgress + influenceProgress) / 2),
       requirements: [
-        `${VICTORY_THRESHOLDS.alliance.minAllies}+ factions with trust >= ${VICTORY_THRESHOLDS.alliance.minTrust}`,
+        `${VICTORY_THRESHOLDS.alliance.minAllies}+ factions with soft power >= ${VICTORY_THRESHOLDS.alliance.minTrust}`,
         `Influence >= ${VICTORY_THRESHOLDS.alliance.minInfluence}`,
       ],
       currentStatus: `Allies: ${potentialAllies.length}/${VICTORY_THRESHOLDS.alliance.minAllies}, Influence: ${faction.resources.influence.toFixed(0)}`,

@@ -16,6 +16,8 @@ export interface FactionTemplate {
   securityLevel?: number;
   /** Faction's unique special ability action ID */
   specialAbility?: string;
+  /** Optional initial hard-power value (0-100) */
+  hardPower?: number;
 }
 
 export const FACTION_TEMPLATES: FactionTemplate[] = [
@@ -25,9 +27,8 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     type: 'lab',
     resources: {
       compute: 60,
-      talent: 80,
+      cybersecurity: 58,
       capital: 60,
-      data: 60,
       influence: 40,
       trust: 60,
     },
@@ -37,6 +38,7 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     safetyScore: 25,
     publicOpinion: 65,
     securityLevel: 3,
+    hardPower: 26,
     specialAbility: 'open_research',
     strategy: {
       riskTolerance: 35,
@@ -51,9 +53,8 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     type: 'lab',
     resources: {
       compute: 80,
-      talent: 70,
+      cybersecurity: 52,
       capital: 80,
-      data: 60,
       influence: 40,
       trust: 55,
     },
@@ -63,6 +64,7 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     safetyScore: 20,
     publicOpinion: 55,
     securityLevel: 2,
+    hardPower: 30,
     specialAbility: 'move_fast',
     strategy: {
       riskTolerance: 55,
@@ -77,18 +79,18 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     type: 'lab',
     resources: {
       compute: 75,
-      talent: 60,
+      cybersecurity: 70,
       capital: 70,
-      data: 80,
       influence: 40,
-      trust: 45,
+      trust: 55,
     },
     safetyCulture: 45,
     opsec: 70,
     capabilityScore: 15,
     safetyScore: 15,
-    publicOpinion: 40,
+    publicOpinion: 45,
     securityLevel: 4,
+    hardPower: 34,
     specialAbility: 'state_resources',
     strategy: {
       riskTolerance: 65,
@@ -103,9 +105,8 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     type: 'government',
     resources: {
       compute: 20,
-      talent: 30,
+      cybersecurity: 62,
       capital: 70,
-      data: 20,
       influence: 90,
       trust: 70,
     },
@@ -115,6 +116,7 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     safetyScore: 35,
     publicOpinion: 55,
     securityLevel: 4,
+    hardPower: 74,
     specialAbility: 'executive_order',
     strategy: {
       riskTolerance: 30,
@@ -129,9 +131,8 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     type: 'government',
     resources: {
       compute: 20,
-      talent: 30,
+      cybersecurity: 68,
       capital: 70,
-      data: 20,
       influence: 85,
       trust: 55,
     },
@@ -141,6 +142,7 @@ export const FACTION_TEMPLATES: FactionTemplate[] = [
     safetyScore: 30,
     publicOpinion: 45,
     securityLevel: 5,
+    hardPower: 72,
     specialAbility: 'strategic_initiative',
     strategy: {
       riskTolerance: 40,

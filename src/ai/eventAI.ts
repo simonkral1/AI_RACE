@@ -29,7 +29,7 @@ const scoreChoice = (choice: EventChoice, factionId: string, state: GameState): 
         if (effect.key === 'influence') score += effect.delta * influenceWeight;
         if (effect.key === 'compute') score += effect.delta * riskWeight;
         if (effect.key === 'capital') score += effect.delta * 0.4;
-        if (effect.key === 'talent') score += effect.delta * 0.6;
+        if (effect.key === 'cybersecurity') score += effect.delta * 0.6;
         break;
       case 'stat':
         if (effect.key === 'safetyCulture') score += effect.delta * safetyWeight;
@@ -114,7 +114,7 @@ export const pickEventChoice = async (
       { role: 'system', content: 'You are a strategy game AI. Output JSON only.' },
       { role: 'user', content: JSON.stringify(payload) },
     ],
-    { maxTokens: 120, temperature: 0.4, topP: 0.8 },
+    { maxTokens: 120, temperature: 0.4, topP: 0.8, timeoutMs: 1200, reasoningEffort: 'none' },
   );
 
   if (content) {

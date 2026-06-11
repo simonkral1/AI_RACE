@@ -73,8 +73,42 @@ export const deserializeState = (json: SerializedGameState): GameState => {
   const factions: Record<string, FactionState> = {};
 
   for (const [id, serializedFaction] of Object.entries(json.factions)) {
+    const legacyResources = serializedFaction.resources as Partial<FactionState['resources']> & {
+      talent?: number;
+      data?: number;
+    };
+    const rawResearch = (serializedFaction as { research?: Partial<FactionState['research']> }).research;
+    const researchFallback = Math.max(
+      rawResearch?.capabilities ?? 0,
+      rawResearch?.safety ?? 0,
+      rawResearch?.ops ?? 0,
+      rawResearch?.policy ?? 0,
+      0,
+    );
+    const migratedResearch: FactionState['research'] = {
+      capabilities: rawResearch?.capabilities ?? researchFallback,
+      safety: rawResearch?.safety ?? researchFallback,
+      ops: rawResearch?.ops ?? researchFallback,
+      hardPower: rawResearch?.hardPower ?? researchFallback,
+      policy: rawResearch?.policy ?? researchFallback,
+    };
+    const migratedResources: FactionState['resources'] = {
+      compute: legacyResources.compute ?? 0,
+      cybersecurity:
+        legacyResources.cybersecurity
+        ?? legacyResources.talent
+        ?? legacyResources.data
+        ?? 30,
+      capital: legacyResources.capital ?? 0,
+      influence: legacyResources.influence ?? 0,
+      trust: legacyResources.trust ?? 50,
+    };
+
     factions[id] = {
       ...serializedFaction,
+      research: migratedResearch,
+      resources: migratedResources,
+      hardPower: serializedFaction.hardPower ?? (serializedFaction.type === 'government' ? 70 : 25),
       unlockedTechs: new Set(serializedFaction.unlockedTechs),
     };
   }

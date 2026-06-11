@@ -2,23 +2,21 @@ export type FactionType = 'lab' | 'government';
 
 export type ResourceKey =
   | 'compute'
-  | 'talent'
+  | 'cybersecurity'
   | 'capital'
-  | 'data'
   | 'influence'
   | 'trust';
 
-export type StatKey = ResourceKey | 'safetyCulture' | 'opsec';
+export type StatKey = ResourceKey | 'safetyCulture' | 'opsec' | 'hardPower';
 
-export type BranchId = 'capabilities' | 'safety' | 'ops' | 'policy';
+export type BranchId = 'capabilities' | 'safety' | 'ops' | 'hardPower' | 'policy';
 
 export type Openness = 'open' | 'secret';
 
 export interface Resources {
   compute: number;
-  talent: number;
+  cybersecurity: number;
   capital: number;
-  data: number;
   influence: number;
   trust: number;
 }
@@ -41,12 +39,16 @@ export interface FactionState {
   publicOpinion: number;
   /** Security level (1-5, like AI 2027) */
   securityLevel: number;
+  /** National hard-power projection capacity (0-100) */
+  hardPower: number;
 }
 
 export interface TechNode {
   id: string;
   name: string;
   branch: BranchId;
+  /** Optional faction filter for this technology */
+  allowedFor?: FactionType[];
   cost: number;
   prereqs: string[];
   effects: TechEffect[];
@@ -56,7 +58,7 @@ export type TechEffect =
   | { kind: 'capability'; delta: number }
   | { kind: 'safety'; delta: number }
   | { kind: 'resource'; key: ResourceKey; delta: number }
-  | { kind: 'stat'; key: 'safetyCulture' | 'opsec'; delta: number }
+  | { kind: 'stat'; key: 'safetyCulture' | 'opsec' | 'hardPower'; delta: number }
   | { kind: 'unlockAgi' };
 
 export type ActionKind =

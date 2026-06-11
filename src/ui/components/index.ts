@@ -40,18 +40,6 @@ export {
   type TurningPoint,
 } from './EndgameAnalysis.js';
 
-// Risk and status indicators
-export { renderRiskIndicator, getExposureLabel } from './RiskIndicator.js';
-export { renderOpennessToggle } from './OpennessToggle.js';
-
-// Action selector components
-export {
-  renderActionSelector,
-  renderOrdersPanel,
-  needsTarget,
-  type ActionTarget,
-} from './ActionSelector.js';
-
 // Strategy question component
 export {
   renderStrategyQuestion,
@@ -188,7 +176,6 @@ export {
 // Expanded Command Center
 export {
   renderExpandedCommandCenter,
-  updateExpandedCommandCenter,
   EXPANDED_COMMAND_CENTER_STYLES,
   type ExpandedCommandCenterOptions,
   type ExpandedCommandCenterCallbacks,

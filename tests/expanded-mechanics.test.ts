@@ -20,11 +20,11 @@ describe('Expanded Actions', () => {
       expect(action!.allowedFor).toContain('lab');
     });
 
-    it('increases talent resource', () => {
+    it('increases cybersecurity resource', () => {
       const state = createInitialState();
       const rng = seededRng(42);
       const factionId = 'us_lab_a';
-      const initialTalent = state.factions[factionId].resources.talent;
+      const initialCybersecurity = state.factions[factionId].resources.cybersecurity;
 
       const choices: Record<string, ActionChoice[]> = {
         [factionId]: [
@@ -34,7 +34,7 @@ describe('Expanded Actions', () => {
 
       resolveTurn(state, choices, rng);
 
-      expect(state.factions[factionId].resources.talent).toBeGreaterThan(initialTalent);
+      expect(state.factions[factionId].resources.cybersecurity).toBeGreaterThan(initialCybersecurity);
     });
   });
 

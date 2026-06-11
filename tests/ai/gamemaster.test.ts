@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createInitialState } from '../../src/core/state.js';
 import { GameState } from '../../src/core/types.js';
 import { EVENTS, type EventDefinition, type EventChoice } from '../../src/data/events.js';
+import { ACTIONS } from '../../src/data/actions.js';
 
 // Mock llmClient to avoid actual API calls
 vi.mock('../../src/ai/llmClient.js', () => ({
@@ -64,7 +65,7 @@ describe('Gamemaster AI', () => {
       const explanation = await gamemaster.explainMechanics('resources');
 
       expect(explanation).toBeTruthy();
-      expect(explanation.toLowerCase()).toContain('unavailable');
+      expect(explanation.toLowerCase()).toContain('mechanic');
     });
 
     it('includes gamemaster personality in explanation', async () => {
@@ -85,7 +86,7 @@ describe('Gamemaster AI', () => {
       );
 
       const explanation = await gamemaster.explainMechanics('safety');
-      expect(explanation.toLowerCase()).toContain('unavailable');
+      expect(explanation.toLowerCase()).toContain('safety score');
     });
 
     it('falls back when mechanics reply uses template drafting phrasing', async () => {
@@ -94,7 +95,7 @@ describe('Gamemaster AI', () => {
       );
 
       const explanation = await gamemaster.explainMechanics('capability');
-      expect(explanation.toLowerCase()).toContain('unavailable');
+      expect(explanation.toLowerCase()).toContain('capability score');
     });
 
     it('extracts answer field from JSON response envelope', async () => {
@@ -134,7 +135,7 @@ describe('Gamemaster AI', () => {
       const advice = await gamemaster.getStrategicAdvice(state);
 
       expect(advice).toBeTruthy();
-      expect(advice.toLowerCase()).toContain('unavailable');
+      expect(advice.toLowerCase()).toContain('capability');
     });
 
     it('warns about low global safety', async () => {
@@ -154,7 +155,7 @@ describe('Gamemaster AI', () => {
       );
 
       const advice = await gamemaster.getStrategicAdvice(state, 'us_lab_a');
-      expect(advice.toLowerCase()).toContain('unavailable');
+      expect(advice.toLowerCase()).toContain('safety');
     });
   });
 
@@ -189,7 +190,7 @@ describe('Gamemaster AI', () => {
       const narrative = await gamemaster.narrateEvent(testEvent, testChoice);
 
       expect(narrative).toBeTruthy();
-      expect(narrative.toLowerCase()).toContain('unavailable');
+      expect(narrative.toLowerCase()).toContain('outcome brief');
     });
   });
 
@@ -268,6 +269,82 @@ describe('Gamemaster AI', () => {
     });
   });
 
+  describe('interpretDirectiveActions', () => {
+    const getAllowedActions = () =>
+      ACTIONS.filter((action) => (
+        action.allowedFor.includes('lab')
+        && (!action.factionSpecific || action.factionSpecific === 'us_lab_a')
+      ));
+    const getTargets = () =>
+      Object.values(state.factions)
+        .filter((faction) => faction.id !== 'us_lab_a')
+        .map((faction) => ({ id: faction.id, name: faction.name, type: faction.type }));
+
+    it('uses LLM output when available', async () => {
+      mockCallLlm.mockResolvedValueOnce(JSON.stringify({
+        orders: [
+          { actionId: 'build_compute', openness: 'open' },
+          { actionId: 'espionage', openness: 'secret', targetFactionId: 'us_lab_b' },
+        ],
+      }));
+
+      const result = await gamemaster.interpretDirectiveActions(
+        'Build compute and quietly run espionage on Nexus Labs.',
+        state,
+        'us_lab_a',
+        getAllowedActions(),
+        getTargets(),
+        2,
+      );
+
+      expect(result.source).toBe('llm');
+      expect(result.orders).toHaveLength(2);
+      expect(result.orders[0].actionId).toBe('build_compute');
+      expect(result.orders[1]).toMatchObject({
+        actionId: 'espionage',
+        targetFactionId: 'us_lab_b',
+      });
+    });
+
+    it('maps LLM target names to target ids', async () => {
+      mockCallLlm.mockResolvedValueOnce(JSON.stringify({
+        orders: [
+          { actionId: 'espionage', openness: 'secret', targetFactionId: 'Nexus Labs' },
+          { actionId: 'build_compute', openness: 'open' },
+        ],
+      }));
+
+      const result = await gamemaster.interpretDirectiveActions(
+        'Spy on Nexus Labs.',
+        state,
+        'us_lab_a',
+        getAllowedActions(),
+        getTargets(),
+        2,
+      );
+
+      expect(result.orders[0].actionId).toBe('espionage');
+      expect(result.orders[0].targetFactionId).toBe('us_lab_b');
+    });
+
+    it('returns an AI error when LLM interpretation is unavailable', async () => {
+      mockCallLlm.mockResolvedValueOnce(null);
+
+      const result = await gamemaster.interpretDirectiveActions(
+        'Conduct espionage against Nexus Labs in secret and build compute capacity.',
+        state,
+        'us_lab_a',
+        getAllowedActions(),
+        getTargets(),
+        2,
+      );
+
+      expect(result.source).toBe('error');
+      expect(result.orders).toHaveLength(0);
+      expect(result.note).toContain('[AI Error]');
+    });
+  });
+
   describe('getGameSummary', () => {
     it('generates summary of current game state', async () => {
       mockCallLlm.mockResolvedValueOnce(
@@ -297,7 +374,7 @@ describe('Gamemaster AI', () => {
       const summary = await gamemaster.getGameSummary(state);
 
       expect(summary).toBeTruthy();
-      expect(summary.toLowerCase()).toContain('unavailable');
+      expect(summary).toContain('Q');
     });
   });
 
@@ -403,7 +480,7 @@ describe('Gamemaster AI', () => {
       );
 
       const answer = await gamemaster.askQuestion('What should I do?', state);
-      expect(answer.toLowerCase()).toContain('unavailable');
+      expect(answer).toContain('[AI Error]');
     });
 
     it('keeps useful answer content when mixed with reasoning-style preamble', async () => {
@@ -427,7 +504,7 @@ describe('Gamemaster AI', () => {
       );
 
       const answer = await gamemaster.askQuestion('What is the current situation?', state);
-      expect(answer.toLowerCase()).toContain('unavailable');
+      expect(answer).toContain('[AI Error]');
     });
 
     it('extracts answer from JSON envelope for free-form question', async () => {
@@ -445,13 +522,28 @@ describe('Gamemaster AI', () => {
       );
 
       const answer = await gamemaster.askQuestion('hi', state);
-      expect(answer.toLowerCase()).toContain('unavailable');
+      expect(answer).toContain('[AI Error]');
     });
 
-    it('returns fallback for off-topic questions without calling LLM', async () => {
+    it('routes off-topic question through LLM path', async () => {
+      mockCallLlm.mockResolvedValueOnce('{"answer":"10 plus 10 is 20."}');
       const answer = await gamemaster.askQuestion('what is 10 plus 10', state);
-      expect(answer.toLowerCase()).toContain('unavailable');
-      expect(mockCallLlm).not.toHaveBeenCalled();
+      expect(answer).toContain('20');
+      expect(mockCallLlm).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes identity question through LLM path', async () => {
+      mockCallLlm.mockResolvedValueOnce('{"answer":"I am the Strategic Analyst for this simulation."}');
+      const answer = await gamemaster.askQuestion('who are you?', state);
+      expect(answer.toLowerCase()).toContain('strategic analyst');
+      expect(mockCallLlm).toHaveBeenCalledTimes(1);
+    });
+
+    it('routes short unclear prompt through LLM path', async () => {
+      mockCallLlm.mockResolvedValueOnce('{"answer":"Can you clarify what you want analyzed?"}');
+      const answer = await gamemaster.askQuestion('what?', state);
+      expect(answer.toLowerCase()).toContain('clarify');
+      expect(mockCallLlm).toHaveBeenCalledTimes(1);
     });
   });
 });

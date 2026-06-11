@@ -84,17 +84,17 @@ function generateStrategicAnalysis(faction: FactionState, state: GameState): Str
       }
     }
 
-    // Trust issues
+    // Soft-power issues
     if (faction.resources.trust < 40) {
       situations.push({
         id: 'trust-crisis',
-        title: 'Public Trust Crisis',
-        description: `Public trust at ${Math.round(faction.resources.trust)}% is dangerously low. A scandal could trigger regulatory crackdown or worse.`,
+        title: 'Soft-Power Crisis',
+        description: `Soft power at ${Math.round(faction.resources.trust)}% is dangerously low. A scandal could trigger regulatory crackdown or worse.`,
         potentialResponses: [
           {
             id: 'open-research',
             title: 'Open Research Initiative',
-            description: 'Publish research openly and engage with safety advocates to rebuild trust.'
+            description: 'Publish research openly and engage with safety advocates to rebuild soft power.'
           },
           {
             id: 'pr-campaign',

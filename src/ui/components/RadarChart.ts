@@ -1,5 +1,5 @@
 // RadarChart component for faction resource visualization
-// Uses 6 axes: compute, talent, capital, data, influence, trust
+// Uses 5 axes: compute, cybersecurity, capital, influence, soft power
 
 import {
   createSvgContainer,
@@ -19,11 +19,10 @@ export interface RadarChartOptions {
 // Resource display configuration
 const RESOURCE_CONFIG: { key: ResourceKey; label: string; max: number }[] = [
   { key: 'compute', label: 'Compute', max: 100 },
-  { key: 'talent', label: 'Talent', max: 100 },
+  { key: 'cybersecurity', label: 'Cyber', max: 100 },
   { key: 'capital', label: 'Capital', max: 100 },
-  { key: 'data', label: 'Data', max: 100 },
   { key: 'influence', label: 'Influence', max: 100 },
-  { key: 'trust', label: 'Trust', max: 100 },
+  { key: 'trust', label: 'Soft Power', max: 100 },
 ];
 
 // Color schemes for different faction types
@@ -209,9 +208,8 @@ export function renderFogOfWarRadarChart(
 export function getResourceBands(resources: Resources): Record<ResourceKey, 'Low' | 'Med' | 'High'> {
   return {
     compute: valueToBand(resources.compute),
-    talent: valueToBand(resources.talent),
+    cybersecurity: valueToBand(resources.cybersecurity),
     capital: valueToBand(resources.capital),
-    data: valueToBand(resources.data),
     influence: valueToBand(resources.influence),
     trust: valueToBand(resources.trust),
   };

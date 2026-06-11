@@ -1,10 +1,11 @@
 import { extractLlmText } from './llmParsing.js';
 
-const DEFAULT_MODEL = 'claude-opus-4-6';
+const DEFAULT_MODEL = 'google/gemini-3-flash';
 const DEFAULT_MAX_TOKENS = 220;
 const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_TIMEOUT_MS = 30000;
 const DEFAULT_PROXY_URL = '/api/llm';
+const DEFAULT_SERVER_BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export type LlmMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -18,6 +19,7 @@ export type LlmCallOptions = {
   topP?: number;
   timeoutMs?: number;
   responseFormat?: Record<string, unknown>;
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
 };
 
 type LlmPayload = {
@@ -48,30 +50,65 @@ const isLlmDisabledInBrowser = (): boolean => {
   }
 };
 
-const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs: number): Promise<Response> => {
+const fetchWithTimeout = (url: string, options: RequestInit, timeoutMs: number): Promise<Response> => {
   if (typeof fetch !== 'function') {
-    throw new Error('Fetch is not available in this runtime.');
+    return Promise.reject(new Error('Fetch is not available in this runtime.'));
   }
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+
+  return new Promise<Response>((resolve, reject) => {
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      controller.abort();
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    fetch(url, { ...options, signal: controller.signal })
+      .then((response) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(response);
+      })
+      .catch((error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      });
+  });
 };
 
 const extractTextFromPayload = (payload: LlmPayload): string | null => {
-  // Simple { content: "text" } from our proxy
-  if (typeof payload.content === 'string' && payload.content.length > 0) {
-    return payload.content;
-  }
+  const direct = extractLlmText(payload.content);
+  if (direct) return direct;
+
   // OpenAI-compatible fallback
   for (const choice of payload.choices ?? []) {
     const choiceText = extractLlmText(choice.message?.content) ?? extractLlmText(choice.text);
     if (choiceText) return choiceText;
   }
-  return extractLlmText(payload.content) ?? extractLlmText(payload.output_text);
+  return extractLlmText(payload.output_text);
+};
+
+const getServerLlmConfig = (): {
+  apiKey?: string;
+  baseUrl: string;
+  model: string;
+  httpReferer?: string;
+  xTitle?: string;
+} => {
+  // Prefer OpenRouter variables, keep legacy aliases for backward compatibility.
+  const apiKey = process.env.OPENROUTER_API_KEY ?? process.env.HYPERBOLIC_API_KEY;
+  const baseUrl = process.env.OPENROUTER_BASE_URL ?? process.env.HYPERBOLIC_BASE_URL ?? DEFAULT_SERVER_BASE_URL;
+  const model = process.env.OPENROUTER_MODEL ?? process.env.HYPERBOLIC_MODEL ?? DEFAULT_MODEL;
+  const httpReferer = process.env.OPENROUTER_HTTP_REFERER;
+  const xTitle = process.env.OPENROUTER_X_TITLE;
+  return { apiKey, baseUrl, model, httpReferer, xTitle };
 };
 
 export const callLlm = async (messages: LlmMessage[], options: LlmCallOptions = {}): Promise<string | null> => {
@@ -87,7 +124,10 @@ export const callLlm = async (messages: LlmMessage[], options: LlmCallOptions = 
             messages,
             max_tokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
             temperature: options.temperature ?? DEFAULT_TEMPERATURE,
+            top_p: options.topP,
             model: options.model ?? DEFAULT_MODEL,
+            response_format: options.responseFormat,
+            reasoning_effort: options.reasoningEffort,
           }),
         },
         options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -97,7 +137,39 @@ export const callLlm = async (messages: LlmMessage[], options: LlmCallOptions = 
       return extractTextFromPayload(payload);
     }
 
-    // Server-side: use claude CLI via spawn (uses subscription)
+    const serverConfig = getServerLlmConfig();
+    const model = options.model ?? serverConfig.model;
+
+    // Server-side API path (used by tests and production server envs)
+    if (serverConfig.apiKey) {
+      const response = await fetchWithTimeout(
+        serverConfig.baseUrl,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${serverConfig.apiKey}`,
+            ...(serverConfig.httpReferer ? { 'HTTP-Referer': serverConfig.httpReferer } : {}),
+            ...(serverConfig.xTitle ? { 'X-Title': serverConfig.xTitle } : {}),
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            max_tokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
+            temperature: options.temperature ?? DEFAULT_TEMPERATURE,
+            ...(typeof options.topP === 'number' ? { top_p: options.topP } : {}),
+            ...(options.reasoningEffort ? { reasoning: { effort: options.reasoningEffort } } : {}),
+            ...(options.responseFormat ? { response_format: options.responseFormat } : {}),
+          }),
+        },
+        options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      );
+      if (!response.ok) return null;
+      const payload = (await response.json()) as LlmPayload;
+      return extractTextFromPayload(payload);
+    }
+
+    // Local CLI fallback when no API key is configured.
     const { spawn } = await import('child_process');
     const systemParts: string[] = [];
     const userParts: string[] = [];
@@ -106,7 +178,6 @@ export const callLlm = async (messages: LlmMessage[], options: LlmCallOptions = 
       else userParts.push(msg.content);
     }
 
-    const model = options.model ?? DEFAULT_MODEL;
     const args = [
       '--print',
       '--model', model,

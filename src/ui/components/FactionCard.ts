@@ -9,16 +9,16 @@ import {
   valueToBand,
   RADAR_COLORS,
 } from './RadarChart.js';
-import type { FactionState, FactionType, Resources, ResourceKey, GameState } from '../../core/types.js';
+import type { FactionState, FactionType, ResourceKey, GameState } from '../../core/types.js';
 
 // Resource display order and labels
-const RESOURCE_DISPLAY: { key: ResourceKey; label: string }[] = [
+const RESOURCE_DISPLAY: { key: ResourceKey | 'hardPower'; label: string }[] = [
   { key: 'compute', label: 'Compute' },
-  { key: 'trust', label: 'Trust' },
-  { key: 'talent', label: 'Talent' },
+  { key: 'trust', label: 'Soft Power' },
+  { key: 'cybersecurity', label: 'Cybersecurity' },
   { key: 'capital', label: 'Capital' },
-  { key: 'data', label: 'Data' },
   { key: 'influence', label: 'Influence' },
+  { key: 'hardPower', label: 'Hard Power' },
 ];
 
 // Relationship indicator types
@@ -149,20 +149,20 @@ function createMoodIndicator(mood?: string): HTMLElement | null {
 }
 
 /**
- * Create the scores display (Capability and Safety)
+ * Create the scores display (Capital and Safety)
  */
 function createScoresDisplay(
-  capabilityScore: number,
+  capital: number,
   safetyScore: number,
   isPlayer: boolean
 ): HTMLElement {
   const container = div({ className: 'faction-card__scores' });
 
-  // Capability score
+  // Capital counter
   const capabilityEl = div({ className: 'faction-card__score faction-card__score--capability' });
   capabilityEl.innerHTML = `
-    <span class="score-label">CAP</span>
-    <span class="score-value">${isPlayer ? formatScore(capabilityScore) : valueToBand(capabilityScore)}</span>
+    <span class="score-label">CAPITAL</span>
+    <span class="score-value">${isPlayer ? formatScore(capital) : valueToBand(capital)}</span>
   `;
   container.appendChild(capabilityEl);
 
@@ -183,13 +183,15 @@ function createScoresDisplay(
  * For non-player factions: shows Low/Med/High bands (fog of war)
  */
 function createResourcesGrid(
-  resources: Resources,
+  faction: FactionState,
   isPlayer: boolean
 ): HTMLElement {
   const container = div({ className: 'faction-card__resources' });
 
   for (const { key, label } of RESOURCE_DISPLAY) {
-    const value = resources[key];
+    const value = key === 'hardPower'
+      ? faction.hardPower
+      : faction.resources[key];
     const displayValue = isPlayer ? Math.round(value).toString() : valueToBand(value);
 
     const resourceEl = div({ className: 'faction-card__resource' });
@@ -305,7 +307,7 @@ export function renderFactionCard(
 
   // Scores display
   const scoresDisplay = createScoresDisplay(
-    faction.capabilityScore,
+    faction.resources.capital,
     faction.safetyScore,
     isPlayer
   );
@@ -314,7 +316,7 @@ export function renderFactionCard(
   card.appendChild(content);
 
   // Resources grid (all 6 resource values)
-  const resourcesGrid = createResourcesGrid(faction.resources, isPlayer);
+  const resourcesGrid = createResourcesGrid(faction, isPlayer);
   card.appendChild(resourcesGrid);
 
   // Mini relationship indicators (if provided)
@@ -423,10 +425,10 @@ function createPlayerHeader(faction: FactionState): HTMLElement {
   header.appendChild(typeEl);
 
   const statEl = div({ className: 'faction-player-header__stat' });
-  const labelEl = span({ className: 'faction-player-header__stat-label', text: 'Capability' });
+  const labelEl = span({ className: 'faction-player-header__stat-label', text: 'Capital' });
   const valueEl = span({
     className: 'faction-player-header__stat-value',
-    text: String(Math.round(faction.capabilityScore)),
+    text: String(Math.round(faction.resources.capital)),
   });
   statEl.appendChild(labelEl);
   statEl.appendChild(valueEl);

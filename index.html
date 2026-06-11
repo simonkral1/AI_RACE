@@ -9,12 +9,6 @@
   <body>
     <div id="app" class="app">
       <div id="startOverlay" class="overlay">
-        <div class="overlay__card">
-          <div class="overlay__title">AGI RACE</div>
-          <div class="overlay__subtitle">Choose your faction. The board will reflect your point of view.</div>
-          <div id="startOptions" class="overlay__options"></div>
-          <button id="startGame" class="btn">Enter Campaign</button>
-        </div>
       </div>
       <div id="endgameOverlay" class="overlay is-hidden">
         <div class="overlay__card overlay__card--endgame">
@@ -50,9 +44,13 @@
         </div>
       </header>
 
-      <main class="layout layout--two-col">
+      <main class="layout layout--three-col">
         <section class="panel panel--factions">
           <div id="factionList" class="faction-list"></div>
+        </section>
+
+        <section class="panel panel--map">
+          <div id="worldMap" class="world-map-container"></div>
         </section>
 
         <section class="panel panel--command-center">

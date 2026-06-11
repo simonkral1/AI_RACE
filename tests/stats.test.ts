@@ -189,7 +189,7 @@ describe('computeResearchGain', () => {
 
     const gain = computeResearchGain(faction, 'capabilities', 10);
 
-    expect(gain).toBeGreaterThan(10); // Should be boosted by compute, talent, data
+    expect(gain).toBeGreaterThan(10); // Should be boosted by compute, cybersecurity, capital
   });
 
   it('computes safety research gain', () => {
@@ -198,7 +198,7 @@ describe('computeResearchGain', () => {
 
     const gain = computeResearchGain(faction, 'safety', 10);
 
-    expect(gain).toBeGreaterThan(10); // Should be boosted by talent, safetyCulture, trust
+    expect(gain).toBeGreaterThan(10); // Should be boosted by cybersecurity, safetyCulture, trust
   });
 
   it('computes ops research gain', () => {
@@ -207,7 +207,7 @@ describe('computeResearchGain', () => {
 
     const gain = computeResearchGain(faction, 'ops', 10);
 
-    expect(gain).toBeGreaterThan(10); // Should be boosted by capital, compute, talent
+    expect(gain).toBeGreaterThan(10); // Should be boosted by capital, compute, cybersecurity
   });
 
   it('computes policy research gain', () => {
@@ -217,6 +217,15 @@ describe('computeResearchGain', () => {
     const gain = computeResearchGain(faction, 'policy', 10);
 
     expect(gain).toBeGreaterThan(10); // Should be boosted by influence, trust
+  });
+
+  it('computes hard power research gain', () => {
+    const state = createInitialState();
+    const faction = Object.values(state.factions)[0];
+
+    const gain = computeResearchGain(faction, 'hardPower', 10);
+
+    expect(gain).toBeGreaterThan(10); // Should be boosted by hardPower, influence, opsec
   });
 
   it('returns base for unknown branch', () => {
@@ -235,8 +244,7 @@ describe('computeResearchGain', () => {
     const lowGain = computeResearchGain(faction, 'capabilities', 10);
 
     faction.resources.compute = 100;
-    faction.resources.talent = 100;
-    faction.resources.data = 100;
+    faction.resources.cybersecurity = 100;
 
     const highGain = computeResearchGain(faction, 'capabilities', 10);
 

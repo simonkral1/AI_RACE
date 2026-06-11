@@ -17,7 +17,7 @@ const FACTION_PROFILES: Record<string, {
   us_lab_a: {
     motto: '"Move thoughtfully, but move."',
     description: 'A pioneer in safety-conscious AI development, known for publishing breakthrough research while maintaining careful oversight protocols.',
-    strengths: ['Strong safety culture', 'Top-tier talent pool', 'Public trust'],
+    strengths: ['Strong safety culture', 'Top-tier security engineering', 'Soft-power legitimacy'],
     weaknesses: ['Slower deployment cycles', 'High operational costs', 'Regulatory scrutiny'],
     personality: 'Methodical and transparent, prioritizing long-term safety over short-term gains.',
   },
@@ -30,9 +30,9 @@ const FACTION_PROFILES: Record<string, {
   },
   cn_lab: {
     motto: '"National interest, global impact."',
-    description: 'A state-backed research collective with access to unprecedented data resources and computational infrastructure.',
-    strengths: ['Vast data access', 'Government backing', 'Operational security'],
-    weaknesses: ['Trust deficit internationally', 'Isolated from Western talent', 'Oversight opacity'],
+    description: 'A state-backed research collective with privileged infrastructure and high operational security.',
+    strengths: ['State-backed infrastructure', 'Government backing', 'Operational security'],
+    weaknesses: ['Soft-power deficit internationally', 'Global collaboration limits', 'Oversight opacity'],
     personality: 'Strategic and patient, playing a long game with state resources.',
   },
   us_gov: {
@@ -46,7 +46,7 @@ const FACTION_PROFILES: Record<string, {
     motto: '"Technology sovereignty."',
     description: 'Central planning authority coordinating national AI strategy and maintaining technological independence.',
     strengths: ['Centralized coordination', 'Long-term planning', 'Resource mobilization'],
-    weaknesses: ['Information asymmetry', 'Trust challenges abroad', 'Flexibility limitations'],
+    weaknesses: ['Information asymmetry', 'Soft-power challenges abroad', 'Flexibility limitations'],
     personality: 'Calculating and strategic, balancing control with competitive advancement.',
   },
 };
@@ -54,11 +54,10 @@ const FACTION_PROFILES: Record<string, {
 // Resource display configuration
 const RESOURCE_CONFIG: { key: ResourceKey; label: string; icon: string; color: string }[] = [
   { key: 'compute', label: 'Compute', icon: '[ ]', color: '#5a9de2' },
-  { key: 'talent', label: 'Talent', icon: '[ ]', color: '#8ac06c' },
+  { key: 'cybersecurity', label: 'Cybersecurity', icon: '[ ]', color: '#8ac06c' },
   { key: 'capital', label: 'Capital', icon: '$', color: '#f6c06a' },
-  { key: 'data', label: 'Data', icon: '{ }', color: '#c79af5' },
   { key: 'influence', label: 'Influence', icon: '[ ]', color: '#e26d5a' },
-  { key: 'trust', label: 'Trust', icon: '[ ]', color: '#6ec7a2' },
+  { key: 'trust', label: 'Soft Power', icon: '[ ]', color: '#6ec7a2' },
 ];
 
 // Branch display configuration
@@ -66,6 +65,7 @@ const BRANCH_CONFIG: { id: BranchId; label: string; color: string }[] = [
   { id: 'capabilities', label: 'Capabilities', color: '#b84c42' },
   { id: 'safety', label: 'Safety', color: '#3d7a3a' },
   { id: 'ops', label: 'Operations', color: '#4a6eb8' },
+  { id: 'hardPower', label: 'Hard Power', color: '#b0642d' },
   { id: 'policy', label: 'Policy', color: '#8a5cb8' },
 ];
 
@@ -355,6 +355,16 @@ function createStatusSection(
     </span>
   `;
   grid.appendChild(opsecStatus);
+
+  // Hard Power
+  const hardPowerStatus = div({ className: 'dossier-status-item' });
+  hardPowerStatus.innerHTML = `
+    <span class="dossier-status-item__label">Hard Power</span>
+    <span class="dossier-status-item__value" style="color: var(--branch-hardPower)">
+      ${isPlayer ? Math.round(faction.hardPower) : valueToBand(faction.hardPower)}
+    </span>
+  `;
+  grid.appendChild(hardPowerStatus);
 
   section.appendChild(grid);
   return section;

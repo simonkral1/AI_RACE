@@ -1,5 +1,7 @@
 // Simple Vertical Tech Tree - Clean, functional tech selection
 import { TechNode, FactionState, BranchId } from '../core/types.js';
+import { getUnifiedResearchPool } from '../core/research.js';
+import { isTechAvailableForFaction } from '../core/techAccess.js';
 import { TECH_TREE } from '../data/techTree.js';
 
 export interface SimpleTechCallbacks {
@@ -10,17 +12,21 @@ const BRANCH_INFO: Record<BranchId, { name: string; color: string; icon: string 
   capabilities: { name: 'Capabilities', color: '#b84c42', icon: '⚡' },
   safety: { name: 'Safety', color: '#3d7a3a', icon: '🛡️' },
   ops: { name: 'Operations', color: '#4a6eb8', icon: '⚙️' },
+  hardPower: { name: 'Hard Power', color: '#b0642d', icon: '⚔️' },
   policy: { name: 'Policy', color: '#8a5cb8', icon: '📜' },
 };
 
-function canResearch(tech: TechNode, faction: FactionState): boolean {
-  if (faction.unlockedTechs.has(tech.id)) return false;
+function prereqsMet(tech: TechNode, faction: FactionState): boolean {
   return tech.prereqs.every(prereq => faction.unlockedTechs.has(prereq));
 }
 
-function getTechCost(tech: TechNode, faction: FactionState): number {
-  const progress = faction.research[tech.branch] || 0;
-  return Math.max(0, tech.cost - Math.floor(progress));
+function canResearch(tech: TechNode, faction: FactionState): boolean {
+  if (faction.unlockedTechs.has(tech.id)) return false;
+  return prereqsMet(tech, faction) && getUnifiedResearchPool(faction) >= tech.cost;
+}
+
+function getTechCost(tech: TechNode): number {
+  return tech.cost;
 }
 
 export function renderSimpleTechTree(
@@ -40,13 +46,15 @@ export function renderSimpleTechTree(
   }
 
   for (const tech of TECH_TREE) {
+    if (!isTechAvailableForFaction(tech, faction)) continue;
     branches.get(tech.branch)?.push(tech);
   }
 
   // Render each branch as a vertical column
   for (const [branch, techs] of branches) {
+    if (techs.length === 0) continue;
     const info = BRANCH_INFO[branch];
-    const branchProgress = faction.research[branch] || 0;
+    const researchPool = getUnifiedResearchPool(faction);
 
     const branchEl = document.createElement('div');
     branchEl.className = 'simple-tech__branch';
@@ -58,7 +66,7 @@ export function renderSimpleTechTree(
     header.innerHTML = `
       <span class="simple-tech__icon">${info.icon}</span>
       <span class="simple-tech__name">${info.name}</span>
-      <span class="simple-tech__progress">${Math.floor(branchProgress)} RP</span>
+      <span class="simple-tech__progress">${Math.floor(researchPool)} RP</span>
     `;
     branchEl.appendChild(header);
 
@@ -71,13 +79,14 @@ export function renderSimpleTechTree(
 
     for (const tech of sorted) {
       const isUnlocked = faction.unlockedTechs.has(tech.id);
+      const isPrereqReady = prereqsMet(tech, faction);
       const canUnlock = canResearch(tech, faction);
-      const cost = getTechCost(tech, faction);
+      const cost = getTechCost(tech);
 
       const nodeEl = document.createElement('div');
       nodeEl.className = 'simple-tech__node';
       if (isUnlocked) nodeEl.classList.add('simple-tech__node--unlocked');
-      else if (canUnlock) nodeEl.classList.add('simple-tech__node--available');
+      else if (isPrereqReady) nodeEl.classList.add('simple-tech__node--available');
       else nodeEl.classList.add('simple-tech__node--locked');
 
       // Effect summary
@@ -93,7 +102,7 @@ export function renderSimpleTechTree(
         <div class="simple-tech__node-name">${tech.name}</div>
         <div class="simple-tech__node-effect">${effectText}</div>
         ${isUnlocked ? '<div class="simple-tech__node-status">✓</div>' :
-          canUnlock ? `<button class="simple-tech__node-btn" data-tech="${tech.id}">Research (${cost})</button>` :
+          isPrereqReady ? `<button class="simple-tech__node-btn" data-tech="${tech.id}" ${canUnlock ? '' : 'disabled'}>${canUnlock ? `Research (${cost})` : `Need ${cost} RP`}</button>` :
           '<div class="simple-tech__node-status">🔒</div>'}
       `;
 

@@ -215,7 +215,7 @@ describe('decideActionsHeuristic', () => {
 
   describe('edge cases', () => {
     it('handles faction with no resources gracefully', () => {
-      state.factions['us_lab_a'].resources = { capital: 0, compute: 0, data: 0, influence: 0, trust: 0, talent: 0 };
+      state.factions['us_lab_a'].resources = { capital: 0, compute: 0, cybersecurity: 0, influence: 0, trust: 0 };
       const choices = decideActionsHeuristic(state, 'us_lab_a', deterministicRng);
       expect(choices.length).toBeGreaterThan(0);
       expect(choices.some(c => c.actionId === 'deploy_products')).toBe(true);

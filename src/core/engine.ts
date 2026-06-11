@@ -1,9 +1,10 @@
 import { ACTIONS } from '../data/actions.js';
 import { ACTION_POINTS_PER_TURN, DETECTION, ESPIONAGE, GOVERNMENT_VICTORY, MAX_TURN, OPENNESS_MULTIPLIERS, SAFETY_THRESHOLDS } from './constants.js';
+import { addUnifiedResearch, getUnifiedResearchPool, normalizeUnifiedResearch, spendUnifiedResearch } from './research.js';
 import { computeGlobalSafety, applyResourceDelta, applyScoreDelta, applyStatDelta, computeResearchGain } from './stats.js';
 import { unlockAvailableTechs } from './tech.js';
 import { clamp } from './utils.js';
-import { ActionChoice, ActionDefinition, FactionState, GameState, Openness } from './types.js';
+import { ActionChoice, ActionDefinition, ActionKind, BranchId, FactionState, GameState, Openness } from './types.js';
 import {
   checkVictoryConditions,
   checkLossConditions,
@@ -12,8 +13,23 @@ import {
 } from './victoryConditions.js';
 
 const ACTION_MAP = new Map(ACTIONS.map((action) => [action.id, action]));
+const PAPER_SPILLOVER_RATIO = 0.24;
+const PAPER_ELIGIBLE_ACTIONS = new Set<ActionKind>([
+  'research_capabilities',
+  'research_safety',
+  'publish_research',
+  'open_research',
+  'policy',
+]);
 
-const getAction = (actionId: string): ActionDefinition => {
+type ResearchDisclosure = {
+  sourceFactionId: string;
+  actionName: string;
+  branch: BranchId;
+  gain: number;
+};
+
+export const getAction = (actionId: string): ActionDefinition => {
   const action = ACTION_MAP.get(actionId);
   if (!action) {
     throw new Error(`Unknown action: ${actionId}`);
@@ -28,30 +44,31 @@ const applyIncome = (faction: FactionState): void => {
     const income = 4 + faction.resources.trust * 0.04 + faction.resources.influence * 0.02 + opinionBonus;
     faction.resources.capital = clamp(faction.resources.capital + income, 0, 100);
 
-    // Research income scales with compute, data, and talent
+    // Research income scales with compute, capital, and cybersecurity maturity.
     const researchBase = 8;
     const computeBonus = faction.resources.compute * 0.08;
-    const dataBonus = faction.resources.data * 0.05;
-    const talentBonus = faction.resources.talent * 0.03;
-    const researchIncome = researchBase + computeBonus + dataBonus + talentBonus;
+    const capitalBonus = faction.resources.capital * 0.04;
+    const cyberBonus = faction.resources.cybersecurity * 0.05;
+    const researchIncome = researchBase + computeBonus + capitalBonus + cyberBonus;
 
-    // Distribute research points across branches based on faction focus
+    // Unified research pool: branch-specific generation contributes to one shared RP budget.
     const safetyRatio = faction.safetyScore / (faction.safetyScore + faction.capabilityScore + 1);
     const capabilityRatio = 1 - safetyRatio;
 
-    faction.research.capabilities += researchIncome * capabilityRatio * 0.6;
-    faction.research.safety += researchIncome * safetyRatio * 0.4 + 2;
-    faction.research.ops += researchIncome * 0.25;
-    faction.research.policy += researchIncome * 0.1; // Labs get some policy research too
+    const capabilityGain = researchIncome * capabilityRatio * 0.6;
+    const safetyGain = researchIncome * safetyRatio * 0.4 + 2;
+    const opsGain = researchIncome * 0.25;
+    const policyGain = researchIncome * 0.1; // Labs get some policy research too
+    addUnifiedResearch(faction, capabilityGain + safetyGain + opsGain + policyGain);
   } else {
     // Government capital income
     const income = 5 + faction.resources.influence * 0.03 + faction.resources.trust * 0.02;
     faction.resources.capital = clamp(faction.resources.capital + income, 0, 100);
 
-    // Governments get policy and safety research income
+    // Governments get policy and safety research income into the same shared pool.
     const policyIncome = 5 + faction.resources.influence * 0.05;
-    faction.research.policy += policyIncome;
-    faction.research.safety += 2 + faction.resources.trust * 0.02; // Govs contribute to safety research
+    const safetyIncome = 2 + faction.resources.trust * 0.02; // Govs contribute to safety research
+    addUnifiedResearch(faction, policyIncome + safetyIncome);
   }
 };
 
@@ -68,12 +85,77 @@ const applyOpenness = (faction: FactionState, openness: Openness): void => {
   }
 };
 
-const resolveResearch = (faction: FactionState, action: ActionDefinition, openness: Openness): void => {
+const resolveResearch = (
+  faction: FactionState,
+  action: ActionDefinition,
+  openness: Openness,
+  disclosures: ResearchDisclosure[],
+): void => {
+  let totalGain = 0;
   for (const [branch, base] of Object.entries(action.baseResearch)) {
     const branchId = branch as keyof typeof action.baseResearch;
     if (base === undefined) continue;
     const gain = computeResearchGain(faction, branchId, base) * OPENNESS_MULTIPLIERS[openness].research;
-    faction.research[branchId] += gain;
+    totalGain += gain;
+    if (
+      openness === 'open'
+      && gain > 0
+      && PAPER_ELIGIBLE_ACTIONS.has(action.kind)
+      && (
+        branchId === 'capabilities'
+        || branchId === 'safety'
+        || branchId === 'ops'
+        || branchId === 'hardPower'
+        || branchId === 'policy'
+      )
+    ) {
+      disclosures.push({
+        sourceFactionId: faction.id,
+        actionName: action.name,
+        branch: branchId,
+        gain,
+      });
+    }
+  }
+  if (totalGain !== 0) addUnifiedResearch(faction, totalGain);
+};
+
+const applyResearchDisclosureSpillover = (
+  state: GameState,
+  disclosures: ResearchDisclosure[],
+  log: string[],
+): void => {
+  if (!disclosures.length) return;
+
+  const aggregate = new Map<string, ResearchDisclosure>();
+  for (const item of disclosures) {
+    const key = `${item.sourceFactionId}:${item.actionName}:${item.branch}`;
+    const existing = aggregate.get(key);
+    if (existing) {
+      existing.gain += item.gain;
+    } else {
+      aggregate.set(key, { ...item });
+    }
+  }
+
+  for (const item of aggregate.values()) {
+    const source = state.factions[item.sourceFactionId];
+    if (!source) continue;
+    const shared = item.gain * PAPER_SPILLOVER_RATIO;
+    if (shared <= 0) continue;
+
+    let recipients = 0;
+    for (const faction of Object.values(state.factions)) {
+      if (faction.id === source.id) continue;
+      addUnifiedResearch(faction, shared);
+      recipients += 1;
+    }
+
+    if (recipients > 0) {
+      log.push(
+        `${source.name} published ${item.branch} findings via ${item.actionName}; field diffusion shared ${shared.toFixed(1)} RP to ${recipients} factions.`,
+      );
+    }
   }
 };
 
@@ -83,6 +165,7 @@ const resolveEspionage = (
   state: GameState,
   rng: () => number,
   log: string[],
+  effectBoost: number = 1,
 ): void => {
   if (!target || target.id === attacker.id) return;
 
@@ -90,17 +173,21 @@ const resolveEspionage = (
   const successChance = clamp(
     0.05,
     0.85,
-    ESPIONAGE.baseSuccess + attacker.opsec * ESPIONAGE.opsecAttackFactor - target.opsec * ESPIONAGE.opsecDefenseFactor - target.securityLevel * 0.04,
+    ESPIONAGE.baseSuccess
+      + attacker.opsec * ESPIONAGE.opsecAttackFactor
+      + attacker.resources.cybersecurity * 0.0015
+      - target.opsec * ESPIONAGE.opsecDefenseFactor
+      - target.resources.cybersecurity * 0.0015
+      - target.securityLevel * 0.04,
   );
 
   if (rng() < successChance) {
-    // Steal from highest-value branch
-    const targetBranches = Object.entries(target.research).sort((a, b) => b[1] - a[1]);
-    const [branch] = targetBranches[0];
-    const stolen = Math.min(12 + attacker.opsec * 0.1, target.research[branch as keyof typeof target.research]);
-    target.research[branch as keyof typeof target.research] -= stolen;
-    attacker.research[branch as keyof typeof attacker.research] += stolen;
-    log.push(`${attacker.name} stole ${stolen.toFixed(1)} ${branch} research from ${target.name}.`);
+    const baseStolen = Math.min(12 + attacker.opsec * 0.1, getUnifiedResearchPool(target));
+    const stolen = Math.min(baseStolen * effectBoost, getUnifiedResearchPool(target));
+    if (stolen > 0 && spendUnifiedResearch(target, stolen)) {
+      addUnifiedResearch(attacker, stolen);
+      log.push(`${attacker.name} stole ${stolen.toFixed(1)} research points from ${target.name}.`);
+    }
 
     // Chance to also steal tech insights (small capability/safety boost)
     if (rng() < 0.3 && target.capabilityScore > attacker.capabilityScore) {
@@ -110,7 +197,8 @@ const resolveEspionage = (
   }
 
   // Detection scales with target security level
-  const detectionChance = 0.15 + target.securityLevel * 0.05 + target.opsec * 0.002;
+  const baseDetectionChance = 0.15 + target.securityLevel * 0.05 + target.opsec * 0.002 + target.resources.cybersecurity * 0.001;
+  const detectionChance = clamp(0, 0.95, baseDetectionChance * (1 + Math.max(0, effectBoost - 1) * 0.75));
   if (rng() < detectionChance) {
     applyResourceDelta(attacker, { trust: -6, influence: -4 });
     applyResourceDelta(target, { trust: 2 });
@@ -120,6 +208,15 @@ const resolveEspionage = (
     attacker.publicOpinion = clamp(attacker.publicOpinion - 8, 0, 100);
     log.push(`${attacker.name} was caught spying on ${target.name}! Tensions rise.`);
   }
+};
+
+const updateHardPower = (faction: FactionState): void => {
+  const baseDrift = faction.type === 'government' ? 0.35 : 0.08;
+  const influencePull = faction.resources.influence * 0.01;
+  const cyberPull = faction.resources.cybersecurity * 0.008;
+  const computePull = faction.resources.compute * 0.004;
+  const trustDrag = faction.resources.trust < 40 ? -0.25 : 0;
+  faction.hardPower = clamp(faction.hardPower + baseDrift + influencePull + cyberPull + computePull + trustDrag, 0, 100);
 };
 
 /** Raise tension between two factions */
@@ -161,6 +258,14 @@ const updatePublicOpinion = (faction: FactionState, state: GameState): void => {
 
   const drift = safetyPull + trustPull + exposureDrag + gapPenalty;
   faction.publicOpinion = clamp(faction.publicOpinion + drift, 0, 100);
+
+  // Trust naturally erodes toward 70 for labs with high capability
+  // The more powerful you are, the more scrutiny you face
+  if (faction.type === 'lab' && faction.resources.trust > 70) {
+    const capabilityPressure = faction.capabilityScore * 0.015; // Higher cap = more pressure
+    const trustDecay = Math.min(capabilityPressure, 2); // Cap at -2 per turn
+    faction.resources.trust = clamp(faction.resources.trust - trustDecay, 0, 100);
+  }
 };
 
 /** Helper to add or retrieve alliance list for a faction */
@@ -192,6 +297,8 @@ const resolveAction = (
   state: GameState,
   rng: () => number,
   deployAttempts: string[],
+  disclosures: ResearchDisclosure[],
+  effectBoost: number = 1,
 ): void => {
   const action = getAction(choice.actionId);
 
@@ -207,13 +314,46 @@ const resolveAction = (
     return;
   }
 
-  applyResourceDelta(faction, action.baseResourceDelta);
+  const scaleDelta = (value: number | undefined, multiplier: number): number | undefined => {
+    if (value === undefined) return undefined;
+    return value * multiplier;
+  };
+
+  const scaledResourceDelta: ActionDefinition['baseResourceDelta'] = {};
+  for (const [key, value] of Object.entries(action.baseResourceDelta)) {
+    if (value === undefined) continue;
+    (scaledResourceDelta as any)[key] = scaleDelta(value as number, value > 0 ? effectBoost : 1);
+  }
+  applyResourceDelta(faction, scaledResourceDelta);
   applyOpenness(faction, choice.openness);
-  resolveResearch(faction, action, choice.openness);
-  applyActionScoreEffects(faction, action);
+  const scaledAction: ActionDefinition = {
+    ...action,
+    baseResearch: Object.fromEntries(
+      Object.entries(action.baseResearch).map(([branch, base]) => {
+        if (base === undefined) return [branch, base];
+        return [branch, base > 0 ? base * effectBoost : base];
+      }),
+    ) as ActionDefinition['baseResearch'],
+    scoreEffects: action.scoreEffects
+      ? {
+        capabilityDelta: action.scoreEffects.capabilityDelta && action.scoreEffects.capabilityDelta > 0
+          ? action.scoreEffects.capabilityDelta * effectBoost
+          : action.scoreEffects.capabilityDelta,
+        safetyDelta: action.scoreEffects.safetyDelta && action.scoreEffects.safetyDelta > 0
+          ? action.scoreEffects.safetyDelta * effectBoost
+          : action.scoreEffects.safetyDelta,
+      }
+      : undefined,
+    securityLevelDelta: action.securityLevelDelta && action.securityLevelDelta > 0
+      ? action.securityLevelDelta * effectBoost
+      : action.securityLevelDelta,
+  };
+
+  resolveResearch(faction, scaledAction, choice.openness, disclosures);
+  applyActionScoreEffects(faction, scaledAction);
 
   if (choice.openness === 'secret') {
-    faction.exposure += action.exposure;
+    faction.exposure += action.exposure * (1 + Math.max(0, effectBoost - 1) * 0.75);
   }
 
   switch (action.kind) {
@@ -233,13 +373,13 @@ const resolveAction = (
       break;
     case 'espionage': {
       const target = choice.targetFactionId ? state.factions[choice.targetFactionId] : undefined;
-      resolveEspionage(faction, target, state, rng, state.log);
+      resolveEspionage(faction, target, state, rng, state.log, effectBoost);
       break;
     }
     case 'subsidize': {
       const target = choice.targetFactionId ? state.factions[choice.targetFactionId] : undefined;
       if (target && target.type === 'lab') {
-        applyResourceDelta(target, { capital: 6 });
+        applyResourceDelta(target, { capital: 6 * effectBoost });
         state.log.push(`${faction.name} subsidized ${target.name}.`);
       }
       break;
@@ -247,8 +387,8 @@ const resolveAction = (
     case 'regulate': {
       const target = choice.targetFactionId ? state.factions[choice.targetFactionId] : undefined;
       if (target && target.type === 'lab') {
-        applyResourceDelta(target, { compute: -6, influence: -2 });
-        applyScoreDelta(target, 'capabilityScore', -4);
+        applyResourceDelta(target, { compute: -6 * effectBoost, influence: -2 * effectBoost });
+        applyScoreDelta(target, 'capabilityScore', -4 * effectBoost);
         state.log.push(`${faction.name} imposed regulations on ${target.name}.`);
       }
       break;
@@ -263,7 +403,7 @@ const resolveAction = (
     // ============================================================
 
     case 'hire_talent':
-      state.log.push(`${faction.name} recruited top talent.`);
+      state.log.push(`${faction.name} expanded their cybersecurity workforce.`);
       break;
 
     case 'publish_research':
@@ -340,9 +480,9 @@ const resolveAction = (
       // US Gov: Instant strong regulation
       const target = choice.targetFactionId ? state.factions[choice.targetFactionId] : undefined;
       if (target && target.type === 'lab') {
-        applyResourceDelta(target, { compute: -10, influence: -4 });
-        applyScoreDelta(target, 'capabilityScore', -8);
-        applyScoreDelta(target, 'safetyScore', 4);
+        applyResourceDelta(target, { compute: -10 * effectBoost, influence: -4 * effectBoost });
+        applyScoreDelta(target, 'capabilityScore', -8 * effectBoost);
+        applyScoreDelta(target, 'safetyScore', 4 * effectBoost);
         state.log.push(`${faction.name} issued an executive order affecting ${target.name}.`);
       }
       break;
@@ -352,8 +492,8 @@ const resolveAction = (
       // CN Gov: Boost allied lab
       const target = choice.targetFactionId ? state.factions[choice.targetFactionId] : undefined;
       if (target && target.type === 'lab') {
-        applyResourceDelta(target, { compute: 12, capital: 8, data: 6 });
-        applyScoreDelta(target, 'capabilityScore', 4);
+        applyResourceDelta(target, { compute: 12 * effectBoost, capital: 8 * effectBoost, cybersecurity: 6 * effectBoost });
+        applyScoreDelta(target, 'capabilityScore', 4 * effectBoost);
         state.log.push(`${faction.name} launched a strategic initiative supporting ${target.name}.`);
       }
       break;
@@ -392,12 +532,18 @@ export const resolveTurn = (
   state: GameState,
   choices: Record<string, ActionChoice[]>,
   rng: () => number,
+  playerFactionId?: string,
 ): void => {
   if (state.gameOver) return;
 
   const deployAttempts: string[] = [];
+  const disclosures: ResearchDisclosure[] = [];
   advanceCalendar(state);
   state.log.push(`--- ${state.year} Q${state.quarter} ---`);
+
+  for (const faction of Object.values(state.factions)) {
+    normalizeUnifiedResearch(faction);
+  }
 
   for (const faction of Object.values(state.factions)) {
     applyIncome(faction);
@@ -407,16 +553,38 @@ export const resolveTurn = (
     const faction = state.factions[factionId];
     if (!faction) continue;
     const limited = actionChoices.slice(0, ACTION_POINTS_PER_TURN);
+
+    const actionCounts = new Map<string, number>();
     for (const choice of limited) {
-      resolveAction(faction, choice, state, rng, deployAttempts);
+      actionCounts.set(choice.actionId, (actionCounts.get(choice.actionId) ?? 0) + 1);
+    }
+    for (const [actionId, count] of actionCounts.entries()) {
+      if (count > 1) {
+        try {
+          state.log.push(`${faction.name} concentrated efforts on ${getAction(actionId).name}, amplifying impact.`);
+        } catch {
+          state.log.push(`${faction.name} concentrated efforts on ${actionId}, amplifying impact.`);
+        }
+      }
+    }
+
+    const usedCounts = new Map<string, number>();
+    for (const choice of limited) {
+      const used = (usedCounts.get(choice.actionId) ?? 0) + 1;
+      usedCounts.set(choice.actionId, used);
+      const effectBoost = used > 1 ? 1.25 : 1;
+      resolveAction(faction, choice, state, rng, deployAttempts, disclosures, effectBoost);
     }
   }
+
+  applyResearchDisclosureSpillover(state, disclosures, state.log);
 
   for (const faction of Object.values(state.factions)) {
     resolveDetection(faction, state, rng);
   }
 
   for (const faction of Object.values(state.factions)) {
+    if (faction.id === playerFactionId) continue; // Player chooses manually via Tech Tree
     const unlocked = unlockAvailableTechs(faction);
     for (const techId of unlocked) {
       state.log.push(`${faction.name} unlocked ${techId}.`);
@@ -441,6 +609,7 @@ export const resolveTurn = (
   // Update public opinion and decay tensions
   for (const faction of Object.values(state.factions)) {
     updatePublicOpinion(faction, state);
+    updateHardPower(faction);
   }
   decayTensions(state);
 

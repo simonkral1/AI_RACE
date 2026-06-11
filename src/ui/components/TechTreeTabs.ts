@@ -33,6 +33,13 @@ export const BRANCH_TABS: TabInfo[] = [
     description: 'Infrastructure and scaling',
   },
   {
+    id: 'hardPower',
+    name: 'Hard Power',
+    icon: '\u2694\uFE0F', // Crossed swords
+    color: '#b0642d',
+    description: 'Deterrence and military capability',
+  },
+  {
     id: 'policy',
     name: 'Policy',
     icon: '\uD83D\uDCDC', // Scroll
@@ -55,6 +62,7 @@ export function renderTechTreeTabs(options: TechTreeTabsOptions): HTMLElement {
   for (const tab of BRANCH_TABS) {
     const branchId = tab.id as BranchId;
     const progress = branchProgress[branchId] || { unlocked: 0, total: 0 };
+    if (progress.total <= 0) continue;
     const progressPercent = progress.total > 0
       ? Math.round((progress.unlocked / progress.total) * 100)
       : 0;

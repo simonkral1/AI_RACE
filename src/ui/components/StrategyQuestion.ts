@@ -21,7 +21,7 @@ const QUESTIONS = {
     lab: [
       'What is your priority this quarter: growth or safety?',
       'How aggressive should your research be this quarter?',
-      'Should you focus on building compute or talent?',
+      'Should you focus on building compute or cybersecurity?',
       'How openly will you share your research progress?',
     ],
     government: [
@@ -65,7 +65,7 @@ const QUESTIONS = {
   crisis: {
     lab: [
       'Safety levels are critical. How do you respond?',
-      'Public trust is eroding. What will you do?',
+      'Soft power is eroding. What will you do?',
       'International tensions are high. How should you adapt?',
       'A major incident seems imminent. What is your contingency?',
     ],

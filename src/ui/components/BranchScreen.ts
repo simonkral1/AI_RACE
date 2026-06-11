@@ -1,6 +1,8 @@
 // Branch Screen - Full-screen view for a single tech branch
 import { el, div, button, ICONS, BRANCH_COLORS } from './base.js';
 import { TechNode, FactionState, BranchId } from '../../core/types.js';
+import { getUnifiedResearchPool } from '../../core/research.js';
+import { isTechAvailableForFaction } from '../../core/techAccess.js';
 import { TECH_TREE } from '../../data/techTree.js';
 import { getTabInfo, BRANCH_TABS } from './TechTreeTabs.js';
 
@@ -35,10 +37,9 @@ function getPrereqNames(tech: TechNode): string[] {
   });
 }
 
-// Calculate effective cost based on research progress
-function getTechCost(tech: TechNode, faction: FactionState): number {
-  const progress = faction.research[tech.branch] || 0;
-  return Math.max(0, tech.cost - Math.floor(progress));
+// Tech costs are fixed; affordability is determined against the unified research pool.
+function getTechCost(tech: TechNode): number {
+  return tech.cost;
 }
 
 // Format effect for display
@@ -74,9 +75,9 @@ function renderTechNode(
   callbacks: BranchScreenCallbacks
 ): HTMLElement {
   const status = getTechStatus(tech, faction);
-  const cost = getTechCost(tech, faction);
-  const branchProgress = faction.research[tech.branch] || 0;
-  const canAfford = branchProgress >= cost;
+  const cost = getTechCost(tech);
+  const researchPool = getUnifiedResearchPool(faction);
+  const canAfford = researchPool >= cost;
   const isSelected = state.selectedTechId === tech.id;
   const isHovered = state.hoveredTechId === tech.id;
 
@@ -201,9 +202,9 @@ function renderTechDetail(
   }
 
   const status = getTechStatus(tech, faction);
-  const cost = getTechCost(tech, faction);
-  const branchProgress = faction.research[tech.branch] || 0;
-  const canAfford = branchProgress >= cost;
+  const cost = getTechCost(tech);
+  const researchPool = getUnifiedResearchPool(faction);
+  const canAfford = researchPool >= cost;
   const tabInfo = getTabInfo(tech.branch);
 
   // Header
@@ -286,8 +287,8 @@ function renderTechDetail(
     costContent.innerHTML = '<span class="branch-detail__completed">Already researched</span>';
   } else {
     const requiredRP = cost;
-    const currentRP = branchProgress;
-    const progressPercent = Math.min(100, Math.round((currentRP / requiredRP) * 100));
+    const currentRP = researchPool;
+    const progressPercent = requiredRP > 0 ? Math.min(100, Math.round((currentRP / requiredRP) * 100)) : 100;
 
     costContent.innerHTML = `
       <div class="branch-detail__cost-row">
@@ -355,7 +356,16 @@ export function renderBranchScreen(
   container.style.setProperty('--branch-color', tabInfo?.color || '#666');
 
   // Get techs for this branch
-  const branchTechs = TECH_TREE.filter(t => t.branch === branch);
+  const branchTechs = TECH_TREE.filter(t => t.branch === branch && isTechAvailableForFaction(t, faction));
+  if (branchTechs.length === 0) {
+    const empty = div({ className: 'branch-screen__empty' });
+    empty.innerHTML = `
+      <div class="branch-screen__empty-icon">🏛️</div>
+      <div class="branch-screen__empty-text">No technologies are currently available for this branch.</div>
+    `;
+    container.appendChild(empty);
+    return container;
+  }
   const techMap = new Map(TECH_TREE.map(t => [t.id, t]));
 
   // Sort by depth (prereq chain length)
@@ -365,7 +375,7 @@ export function renderBranchScreen(
 
   // Calculate branch stats
   const unlockedCount = branchTechs.filter(t => faction.unlockedTechs.has(t.id)).length;
-  const branchProgress = faction.research[branch] || 0;
+  const researchPool = getUnifiedResearchPool(faction);
 
   // Branch header
   const header = div({ className: 'branch-screen__header' });
@@ -395,8 +405,8 @@ export function renderBranchScreen(
   `;
   const rpStat = div({ className: 'branch-screen__stat' });
   rpStat.innerHTML = `
-    <span class="branch-screen__stat-label">Research Points</span>
-    <span class="branch-screen__stat-value">${Math.floor(branchProgress)} RP</span>
+    <span class="branch-screen__stat-label">Research Pool</span>
+    <span class="branch-screen__stat-value">${Math.floor(researchPool)} RP</span>
   `;
   headerRight.appendChild(progressStat);
   headerRight.appendChild(rpStat);
@@ -476,10 +486,12 @@ export function getBranchProgress(
     capabilities: { unlocked: 0, total: 0 },
     safety: { unlocked: 0, total: 0 },
     ops: { unlocked: 0, total: 0 },
+    hardPower: { unlocked: 0, total: 0 },
     policy: { unlocked: 0, total: 0 },
   };
 
   for (const tech of TECH_TREE) {
+    if (!isTechAvailableForFaction(tech, faction)) continue;
     result[tech.branch].total++;
     if (faction.unlockedTechs.has(tech.id)) {
       result[tech.branch].unlocked++;

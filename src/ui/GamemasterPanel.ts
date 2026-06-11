@@ -60,7 +60,7 @@ const createMessageElement = (message: ChatMessage): HTMLElement => {
 
   const roleLabel = span({
     className: 'gm-message__role',
-    text: isUser ? 'You' : 'Gamemaster',
+    text: isUser ? 'You' : 'Analyst',
   });
 
   const content = div({
@@ -97,7 +97,7 @@ const createInputArea = (
     className: 'gm-input',
     attrs: {
       type: 'text',
-      placeholder: 'Ask the Gamemaster...',
+      placeholder: 'Ask the Analyst...',
       disabled: isLoading,
     },
   });
@@ -162,7 +162,7 @@ const createNarrativeSection = (narrative?: string): HTMLElement => {
 
   const header = div({
     className: 'gm-narrative__header',
-    text: 'Current Narrative',
+    text: 'Current Analysis',
   });
 
   const content = div({
@@ -186,7 +186,7 @@ const createChatSection = (
   if (messages.length === 0) {
     const emptyState = div({
       className: 'gm-chat__empty',
-      text: 'Ask the Gamemaster about game mechanics, strategy, or what\'s happening in the world.',
+      text: 'Ask the Analyst about mechanics, strategy, or what changed this turn.',
     });
     section.appendChild(emptyState);
   } else {
@@ -225,7 +225,7 @@ export const renderGamemasterPanel = (options: GamemasterPanelOptions): HTMLElem
     className: 'gm-header',
     children: [
       span({ className: 'gm-header__icon', text: '🎭' }),
-      span({ className: 'gm-header__title', text: 'Gamemaster' }),
+      span({ className: 'gm-header__title', text: 'Analyst' }),
     ],
   });
 

@@ -33,9 +33,8 @@ describe('createInitialState', () => {
     for (const template of FACTION_TEMPLATES) {
       const faction = state.factions[template.id];
       expect(faction.resources.compute).toBe(template.resources.compute);
-      expect(faction.resources.talent).toBe(template.resources.talent);
+      expect(faction.resources.cybersecurity).toBe(template.resources.cybersecurity);
       expect(faction.resources.capital).toBe(template.resources.capital);
-      expect(faction.resources.data).toBe(template.resources.data);
       expect(faction.resources.influence).toBe(template.resources.influence);
       expect(faction.resources.trust).toBe(template.resources.trust);
     }
@@ -60,6 +59,7 @@ describe('createInitialState', () => {
       expect(faction.research.capabilities).toBe(0);
       expect(faction.research.safety).toBe(0);
       expect(faction.research.ops).toBe(0);
+      expect(faction.research.hardPower).toBe(0);
       expect(faction.research.policy).toBe(0);
     }
   });

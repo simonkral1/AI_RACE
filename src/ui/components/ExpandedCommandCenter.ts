@@ -1,33 +1,10 @@
-/**
- * ExpandedCommandCenter Component
- *
- * The main center panel for AGI Race, replacing the tech tree as the primary view.
- * Contains all key controls and information in a 2-column grid layout.
- *
- * Layout:
- * +---------------------------+--------------------+
- * | TURN HEADER (2026 Q1)                          |
- * +---------------------------+--------------------+
- * | [ADVANCE QUARTER BUTTON - full width]          |
- * +---------------------------+--------------------+
- * | Strategic Situations      | Victory Progress   |
- * | (AI-generated cards)      | (from VictoryTracker)
- * |                           |--------------------+
- * |                           | Faction Quick Stats|
- * +---------------------------+--------------------+
- * | Directive Input (full width)                   |
- * +---------------------------+--------------------+
- * | [Tech Tree] [Gamemaster] [Events Badge]        |
- * +---------------------------+--------------------+
- * | Recent Log (last 3-5 entries)                  |
- * +---------------------------+--------------------+
- * | [Reset] [Stats] [Keys]                         |
- * +---------------------------+--------------------+
- */
-
-import { div, span, el, button } from './base.js';
+import { div, span, el, button, createSvgElement } from './base.js';
 import { renderMiniVictoryBars } from './VictoryTracker.js';
-import type { GameState, FactionState } from '../../core/types.js';
+import type {
+  ActionDefinition,
+  GameState,
+  FactionState,
+} from '../../core/types.js';
 
 export interface ExpandedCommandCenterOptions {
   /** Current game state */
@@ -42,10 +19,22 @@ export interface ExpandedCommandCenterOptions {
   pendingEventCount: number;
   /** Current directive text */
   directiveText: string;
-  /** Recent log entries */
-  recentLog: string[];
+  /** Full simulation log for in-panel review */
+  fullLogEntries?: string[];
+  /** Narrative timeline entries */
+  narrativeFeed?: string[];
   /** Strategic situations (AI-generated) */
   situations?: StrategicSituation[];
+  /** Latest evaluated actions for prominent display */
+  actionDossier?: ActionDossierEntry[];
+  /** Number of pending action-review entries */
+  pendingActionReviewCount?: number;
+  /** Locked directives queued for next turn */
+  lockedDirectives?: string[];
+  /** Allowed actions for current faction */
+  allowedActions?: ActionDefinition[];
+  /** Unread inbound faction comms count */
+  commsUnreadCount?: number;
 }
 
 export interface StrategicSituation {
@@ -60,30 +49,31 @@ export interface StrategicSituation {
   }[];
 }
 
+export interface ActionDossierEntry {
+  actorName: string;
+  title: string;
+  openness: 'open' | 'secret';
+  source?: 'llm' | 'error' | 'deterministic';
+  summary: string;
+  intel: string;
+}
+
 export interface ExpandedCommandCenterCallbacks {
-  /** Called when the Advance Quarter button is clicked */
   onAdvanceTurn: () => void;
-  /** Called when directive text is submitted */
   onDirectiveSubmit: (text: string) => void;
-  /** Called when Tech Tree button is clicked (opens modal) */
+  onEditLockedDirective?: (index: number) => void;
+  onRemoveLockedDirective?: (index: number) => void;
   onOpenTechTree: () => void;
-  /** Called when Ask Gamemaster button is clicked (opens modal) */
   onOpenGamemaster: () => void;
-  /** Called when event badge is clicked */
+  onOpenFactionChat: () => void;
+  onOpenActionReview?: () => void;
   onEventClick: () => void;
-  /** Called when Reset button is clicked */
   onReset: () => void;
-  /** Called when Stats button is clicked */
   onStats: () => void;
-  /** Called when Help button is clicked */
   onHelp: () => void;
-  /** Called when a suggested response is clicked */
   onSuggestedAction?: (responseText: string) => void;
 }
 
-/**
- * Create a section header element
- */
 function createSectionHeader(title: string): HTMLElement {
   const header = div({ className: 'command-center__section-header' });
   const titleSpan = span({
@@ -94,23 +84,14 @@ function createSectionHeader(title: string): HTMLElement {
   return header;
 }
 
-/**
- * Format the current turn date as "YYYY QN"
- */
 function formatTurnDate(year: number, quarter: number): string {
   return `${year} Q${quarter}`;
 }
 
-/**
- * Format the turn number display (1-indexed for user display)
- */
 function formatTurnNumber(turn: number, maxTurns: number = 32): string {
   return `Turn ${turn + 1}/${maxTurns}`;
 }
 
-/**
- * Get advance button text based on state
- */
 function getAdvanceButtonText(
   campaignStarted: boolean,
   hasPendingEvent: boolean,
@@ -122,9 +103,326 @@ function getAdvanceButtonText(
   return 'Advance Quarter';
 }
 
-/**
- * Generate strategic situations based on game state
- */
+const AGI_CAPABILITY_TRACK_MAX = 100;
+const SAFE_DEPLOY_SAFETY_TARGET = 80;
+const SAFE_DEPLOY_GLOBAL_TARGET = 70;
+
+const FACTION_RACE_COLORS: Record<string, string> = {
+  us_lab_a: '#3f7f5f',
+  us_lab_b: '#b75f48',
+  cn_lab: '#3f6fa6',
+  us_gov: '#7f5d9f',
+  cn_gov: '#a1702b',
+};
+
+type ReadinessStatus = 'ready' | 'tracking' | 'lagging';
+
+function percentTowards(value: number, target: number): number {
+  if (target <= 0) return 0;
+  return Math.max(0, Math.min(100, (value / target) * 100));
+}
+
+function getReadinessStatus(value: number, target: number): ReadinessStatus {
+  if (value >= target) return 'ready';
+  const ratio = target <= 0 ? 0 : value / target;
+  if (ratio >= 0.75) return 'tracking';
+  return 'lagging';
+}
+
+function createReadinessItem(
+  label: string,
+  valueText: string,
+  progress: number,
+  status: ReadinessStatus,
+): HTMLElement {
+  const item = div({
+    className: `command-center__agi-readiness-item command-center__agi-readiness-item--${status}`,
+  });
+
+  const row = div({ className: 'command-center__agi-readiness-row' });
+  row.appendChild(span({
+    className: 'command-center__agi-readiness-label',
+    text: label,
+  }));
+  row.appendChild(span({
+    className: 'command-center__agi-readiness-value',
+    text: valueText,
+  }));
+  item.appendChild(row);
+
+  const meter = div({ className: 'command-center__agi-readiness-meter' });
+  meter.appendChild(div({
+    className: 'command-center__agi-readiness-fill',
+    attrs: { style: `width: ${progress.toFixed(1)}%;` },
+  }));
+  item.appendChild(meter);
+  return item;
+}
+
+function getFactionRaceColor(faction: FactionState, isPlayer: boolean): string {
+  if (isPlayer) return 'var(--accent)';
+  const mapped = FACTION_RACE_COLORS[faction.id];
+  if (mapped) return mapped;
+  return faction.type === 'lab' ? '#b4634f' : '#78649a';
+}
+
+type MapPoint = { x: number; y: number };
+
+const FACTION_MAP_POINTS: Record<string, MapPoint> = {
+  us_lab_a: { x: 120, y: 104 },
+  us_lab_b: { x: 142, y: 132 },
+  us_gov: { x: 92, y: 162 },
+  cn_lab: { x: 418, y: 108 },
+  cn_gov: { x: 446, y: 156 },
+};
+
+const tensionKey = (a: string, b: string): string => [a, b].sort().join(':');
+
+const getPairTension = (state: GameState, a: string, b: string): number =>
+  state.tensions.get(tensionKey(a, b)) ?? 0;
+
+const areAllied = (state: GameState, a: string, b: string): boolean => {
+  const listA = state.alliances.get(a) ?? [];
+  const listB = state.alliances.get(b) ?? [];
+  return listA.includes(b) || listB.includes(a);
+};
+
+function createGeopoliticalMap(state: GameState, playerFactionId: string): HTMLElement {
+  const section = div({ className: 'command-center__geo-map' });
+  section.appendChild(createSectionHeader('Geopolitical Map'));
+
+  const svg = createSvgElement('svg', {
+    className: 'command-center__geo-svg',
+    viewBox: '0 0 520 240',
+    role: 'img',
+    'aria-label': 'Geopolitical map',
+  }) as unknown as SVGSVGElement;
+
+  const bg = createSvgElement('g', { className: 'command-center__geo-bg' });
+  bg.appendChild(createSvgElement('path', {
+    className: 'command-center__geo-land',
+    d: 'M25 70 C40 55, 95 55, 120 78 C135 92, 146 124, 132 145 C116 169, 64 178, 36 152 C16 132, 10 92, 25 70 Z',
+  }));
+  bg.appendChild(createSvgElement('path', {
+    className: 'command-center__geo-land',
+    d: 'M200 66 C230 44, 290 46, 316 70 C338 90, 338 126, 312 145 C282 168, 226 170, 200 144 C182 126, 176 88, 200 66 Z',
+  }));
+  bg.appendChild(createSvgElement('path', {
+    className: 'command-center__geo-land',
+    d: 'M348 82 C372 56, 440 56, 476 86 C500 104, 508 136, 490 156 C468 180, 408 186, 372 160 C346 140, 332 108, 348 82 Z',
+  }));
+  bg.appendChild(createSvgElement('path', {
+    className: 'command-center__geo-land command-center__geo-land--south',
+    d: 'M240 168 C264 156, 300 158, 322 172 C344 186, 352 212, 330 224 C300 240, 260 238, 238 220 C222 206, 220 176, 240 168 Z',
+  }));
+  svg.appendChild(bg);
+
+  const ids = Object.keys(state.factions);
+  const links = createSvgElement('g', { className: 'command-center__geo-links' });
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const a = ids[i]!;
+      const b = ids[j]!;
+      const pa = FACTION_MAP_POINTS[a];
+      const pb = FACTION_MAP_POINTS[b];
+      if (!pa || !pb) continue;
+
+      const tension = getPairTension(state, a, b);
+      const allied = areAllied(state, a, b);
+      if (!allied && tension < 18) continue;
+
+      const kind = allied ? 'alliance' : 'tension';
+      const opacity = allied ? 0.55 : Math.max(0.18, Math.min(0.9, tension / 100));
+      const line = createSvgElement('line', {
+        className: `command-center__geo-link command-center__geo-link--${kind}`,
+        x1: pa.x,
+        y1: pa.y,
+        x2: pb.x,
+        y2: pb.y,
+        'stroke-opacity': opacity,
+      });
+      const title = createSvgElement('title', {});
+      title.textContent = allied
+        ? `${state.factions[a]?.name ?? a} ↔ ${state.factions[b]?.name ?? b}: Alliance`
+        : `${state.factions[a]?.name ?? a} ↔ ${state.factions[b]?.name ?? b}: Tension ${Math.round(tension)}`;
+      line.appendChild(title);
+      links.appendChild(line);
+    }
+  }
+  svg.appendChild(links);
+
+  const nodes = createSvgElement('g', { className: 'command-center__geo-nodes' });
+  for (const faction of Object.values(state.factions)) {
+    const point = FACTION_MAP_POINTS[faction.id];
+    if (!point) continue;
+    const isPlayer = faction.id === playerFactionId;
+    const group = createSvgElement('g', {
+      className: `command-center__geo-node${isPlayer ? ' command-center__geo-node--player' : ''}`,
+      transform: `translate(${point.x} ${point.y})`,
+    });
+
+    const r = faction.type === 'government' ? 8.5 : 7.5;
+    group.appendChild(createSvgElement('circle', {
+      className: 'command-center__geo-node-ring',
+      cx: 0,
+      cy: 0,
+      r: r + 5.5,
+    }));
+    group.appendChild(createSvgElement('circle', {
+      className: `command-center__geo-node-dot command-center__geo-node-dot--${faction.type}`,
+      cx: 0,
+      cy: 0,
+      r,
+    }));
+    const label = createSvgElement('text', {
+      className: 'command-center__geo-node-label',
+      x: 12,
+      y: 4,
+    });
+    label.textContent = faction.name;
+    group.appendChild(label);
+
+    const title = createSvgElement('title', {});
+    title.textContent = `${faction.name} — Capability ${Math.round(faction.capabilityScore)}, Safety ${Math.round(faction.safetyScore)}, Influence ${Math.round(faction.resources.influence)}`;
+    group.appendChild(title);
+
+    nodes.appendChild(group);
+  }
+  svg.appendChild(nodes);
+
+  section.appendChild(svg as unknown as Node);
+  const legend = div({ className: 'command-center__geo-legend' });
+  legend.appendChild(span({ className: 'command-center__geo-legend-item', text: 'Green = alliance' }));
+  legend.appendChild(span({ className: 'command-center__geo-legend-item', text: 'Red = tension (opacity scales)' }));
+  section.appendChild(legend);
+
+  return section;
+}
+
+function createAgiFrontierMap(state: GameState, playerFactionId: string): HTMLElement {
+  const section = div({ className: 'command-center__agi-map' });
+  section.appendChild(createSectionHeader('AGI Frontier Map'));
+
+  const factions = Object.values(state.factions).sort((a, b) => b.capabilityScore - a.capabilityScore);
+  const playerFaction = state.factions[playerFactionId];
+  if (!playerFaction || factions.length === 0) {
+    section.appendChild(div({
+      className: 'command-center__agi-map-summary',
+      text: 'Faction telemetry unavailable.',
+    }));
+    return section;
+  }
+
+  const leader = factions[0];
+  const playerRank = factions.findIndex((f) => f.id === playerFactionId) + 1;
+  const leadGap = Math.max(0, Math.round(leader.capabilityScore - playerFaction.capabilityScore));
+  const statusLine = playerRank <= 1
+    ? `You are leading capability development at ${Math.round(playerFaction.capabilityScore)}.`
+    : `You are #${playerRank} and trail ${leader.name} by ${leadGap} capability.`;
+  section.appendChild(div({
+    className: 'command-center__agi-map-summary',
+    text: statusLine,
+  }));
+
+  const milestoneStrip = div({ className: 'command-center__agi-milestones' });
+  const milestones = [
+    { label: 'Frontier Models', value: 25 },
+    { label: 'Agentic Systems', value: 50 },
+    { label: 'Deployment Window', value: 80 },
+    { label: 'AGI Threshold', value: 100 },
+  ];
+  for (const milestone of milestones) {
+    milestoneStrip.appendChild(div({
+      className: 'command-center__agi-milestone',
+      attrs: { style: `left: ${milestone.value}%;` },
+      children: [
+        span({ className: 'command-center__agi-milestone-tick', text: '|' }),
+        span({ className: 'command-center__agi-milestone-label', text: milestone.label }),
+      ],
+    }));
+  }
+  section.appendChild(milestoneStrip);
+
+  const raceList = div({ className: 'command-center__agi-race-list' });
+  for (const raceFaction of factions) {
+    const isPlayer = raceFaction.id === playerFactionId;
+    const progress = percentTowards(raceFaction.capabilityScore, AGI_CAPABILITY_TRACK_MAX);
+
+    const row = div({
+      className: `command-center__agi-race-row${isPlayer ? ' command-center__agi-race-row--player' : ''}`,
+    });
+    row.style.setProperty('--race-color', getFactionRaceColor(raceFaction, isPlayer));
+
+    const label = div({ className: 'command-center__agi-race-label' });
+    label.appendChild(span({
+      className: 'command-center__agi-race-name',
+      text: raceFaction.name,
+    }));
+    if (isPlayer) {
+      label.appendChild(span({
+        className: 'command-center__agi-race-you',
+        text: 'YOU',
+      }));
+    }
+    if (raceFaction.canDeployAgi) {
+      label.appendChild(span({
+        className: 'command-center__agi-race-breakthrough',
+        text: 'AGI UNLOCKED',
+      }));
+    }
+    row.appendChild(label);
+
+    const track = div({ className: 'command-center__agi-race-track' });
+    track.appendChild(div({
+      className: 'command-center__agi-race-fill',
+      attrs: { style: `width: ${progress.toFixed(1)}%;` },
+    }));
+    track.appendChild(span({
+      className: `command-center__agi-race-marker${raceFaction.canDeployAgi ? ' command-center__agi-race-marker--breakthrough' : ''}`,
+      attrs: { style: `left: ${progress.toFixed(1)}%;` },
+      text: '◆',
+    }));
+    row.appendChild(track);
+
+    row.appendChild(span({
+      className: 'command-center__agi-race-value',
+      text: String(Math.round(raceFaction.capabilityScore)),
+    }));
+    raceList.appendChild(row);
+  }
+  section.appendChild(raceList);
+
+  const readiness = div({ className: 'command-center__agi-readiness' });
+  const unlockProgress = playerFaction.canDeployAgi
+    ? 100
+    : percentTowards(playerFaction.capabilityScore, AGI_CAPABILITY_TRACK_MAX);
+  readiness.appendChild(createReadinessItem(
+    'AGI Unlock',
+    playerFaction.canDeployAgi ? 'Ready' : 'Locked',
+    unlockProgress,
+    playerFaction.canDeployAgi ? 'ready' : 'lagging',
+  ));
+
+  const safetyProgress = percentTowards(playerFaction.safetyScore, SAFE_DEPLOY_SAFETY_TARGET);
+  readiness.appendChild(createReadinessItem(
+    `Safety >= ${SAFE_DEPLOY_SAFETY_TARGET}`,
+    `${Math.round(playerFaction.safetyScore)}/${SAFE_DEPLOY_SAFETY_TARGET}`,
+    safetyProgress,
+    getReadinessStatus(playerFaction.safetyScore, SAFE_DEPLOY_SAFETY_TARGET),
+  ));
+
+  const globalProgress = percentTowards(state.globalSafety, SAFE_DEPLOY_GLOBAL_TARGET);
+  readiness.appendChild(createReadinessItem(
+    `Global >= ${SAFE_DEPLOY_GLOBAL_TARGET}`,
+    `${Math.round(state.globalSafety)}/${SAFE_DEPLOY_GLOBAL_TARGET}`,
+    globalProgress,
+    getReadinessStatus(state.globalSafety, SAFE_DEPLOY_GLOBAL_TARGET),
+  ));
+  section.appendChild(readiness);
+
+  return section;
+}
+
 function generateStrategicSituations(
   faction: FactionState,
   state: GameState
@@ -132,6 +430,21 @@ function generateStrategicSituations(
   const situations: StrategicSituation[] = [];
 
   if (faction.type === 'lab') {
+    const researchLeverage = faction.capabilityScore + faction.safetyScore;
+    if (researchLeverage >= 40) {
+      situations.push({
+        id: 'research-disclosure',
+        title: 'Research Disclosure Strategy',
+        description: 'Decide what becomes a public paper versus private lab know-how. Public work can improve soft power but also accelerates rivals.',
+        urgency: faction.resources.trust < 45 ? 'high' : 'medium',
+        potentialResponses: [
+          { id: 'paper', title: 'Publish as Paper', description: 'Signal openness and improve field coordination' },
+          { id: 'private', title: 'Keep Private', description: 'Retain proprietary edge with lower transparency' },
+          { id: 'deploy', title: 'Pair with Deployment', description: 'Ship products while controlling disclosure cadence' },
+        ],
+      });
+    }
+
     // Safety vs Capability Trade-off
     const safetyGap = faction.capabilityScore - faction.safetyScore;
     if (safetyGap > 15) {
@@ -151,11 +464,11 @@ function generateStrategicSituations(
     if (faction.resources.trust < 40) {
       situations.push({
         id: 'trust-crisis',
-        title: 'Public Trust Crisis',
-        description: `Trust at ${Math.round(faction.resources.trust)}%. A scandal could trigger crackdown.`,
+        title: 'Soft-Power Crisis',
+        description: `Soft power at ${Math.round(faction.resources.trust)}%. A scandal could trigger crackdown.`,
         urgency: faction.resources.trust < 25 ? 'high' : 'medium',
         potentialResponses: [
-          { id: 'open', title: 'Open Research', description: 'Publish openly to rebuild trust' },
+          { id: 'open', title: 'Open Research', description: 'Publish openly to rebuild soft power' },
           { id: 'pr', title: 'PR Campaign', description: 'Invest in positive messaging' },
         ],
       });
@@ -175,16 +488,16 @@ function generateStrategicSituations(
       });
     }
 
-    // Talent shortage for labs
-    if (faction.resources.talent < 50) {
+    // Cybersecurity weakness for labs
+    if (faction.resources.cybersecurity < 50) {
       situations.push({
-        id: 'talent-shortage',
-        title: 'Talent Gap',
-        description: `Talent pool at ${Math.round(faction.resources.talent)}. Key researchers may leave.`,
-        urgency: faction.resources.talent < 30 ? 'high' : 'medium',
+        id: 'cyber-gap',
+        title: 'Cybersecurity Gap',
+        description: `Cybersecurity at ${Math.round(faction.resources.cybersecurity)}. Breach and espionage risks are rising.`,
+        urgency: faction.resources.cybersecurity < 30 ? 'high' : 'medium',
         potentialResponses: [
-          { id: 'recruit', title: 'Aggressive Hiring', description: 'Increase compensation packages' },
-          { id: 'retain', title: 'Retention Focus', description: 'Improve working conditions' },
+          { id: 'hardening', title: 'Security Hardening', description: 'Upgrade defensive controls and auditing' },
+          { id: 'workforce', title: 'Cyber Workforce', description: 'Expand cyber operations capacity' },
         ],
       });
     }
@@ -256,53 +569,6 @@ function generateStrategicSituations(
   return situations.slice(0, 3);
 }
 
-/**
- * Create the turn header section
- */
-function createTurnHeader(year: number, quarter: number, turn: number): HTMLElement {
-  const header = div({ className: 'command-center__turn-header' });
-
-  const turnDate = span({
-    className: 'command-center__turn-date',
-    text: formatTurnDate(year, quarter),
-  });
-
-  const turnNumber = span({
-    className: 'command-center__turn-number',
-    text: formatTurnNumber(turn),
-  });
-
-  header.appendChild(turnDate);
-  header.appendChild(turnNumber);
-
-  return header;
-}
-
-/**
- * Create the advance button
- */
-function createAdvanceButton(
-  campaignStarted: boolean,
-  hasPendingEvent: boolean,
-  gameOver: boolean,
-  onAdvance: () => void
-): HTMLElement {
-  const buttonText = getAdvanceButtonText(campaignStarted, hasPendingEvent, gameOver);
-  const isDisabled = !campaignStarted || gameOver || hasPendingEvent;
-
-  const btn = el('button', {
-    className: 'command-center__advance-btn',
-  }) as HTMLButtonElement;
-  btn.textContent = buttonText;
-  btn.disabled = isDisabled;
-  btn.addEventListener('click', onAdvance);
-
-  return btn;
-}
-
-/**
- * Create the strategic situations section
- */
 function createSituationsSection(
   situations: StrategicSituation[],
   onSuggestedAction?: (text: string) => void
@@ -373,9 +639,267 @@ function createSituationsSection(
   return section;
 }
 
-/**
- * Create the victory progress section
- */
+function createDossierCard(
+  entry: ActionDossierEntry,
+  emphasized = false,
+): HTMLElement {
+  const card = div({
+    className: `command-center__dossier-card${emphasized ? ' command-center__dossier-card--player' : ''}`,
+  });
+  const header = div({ className: 'command-center__dossier-card-header' });
+  header.appendChild(span({ className: 'command-center__dossier-actor', text: entry.actorName }));
+  header.appendChild(span({
+    className: `command-center__dossier-tag command-center__dossier-tag--${entry.openness}`,
+    text: entry.openness === 'open' ? 'OPEN' : 'PRIVATE',
+  }));
+  if (entry.source) {
+    const sourceText =
+      entry.source === 'llm'
+        ? 'LLM'
+        : entry.source === 'deterministic'
+          ? 'MECHANICS'
+          : 'AI ERROR';
+    header.appendChild(span({
+      className: `command-center__dossier-source command-center__dossier-source--${entry.source}`,
+      text: sourceText,
+    }));
+  }
+
+  card.appendChild(header);
+  card.appendChild(div({ className: 'command-center__dossier-title', text: entry.title }));
+  card.appendChild(div({ className: 'command-center__dossier-summary', text: entry.summary }));
+  card.appendChild(div({ className: 'command-center__dossier-intel', text: entry.intel }));
+  return card;
+}
+
+function createTurnReviewSection(
+  dossier: ActionDossierEntry[],
+  pendingCount: number,
+  playerFactionName: string,
+  fullLogEntries: string[],
+  onOpenActionReview?: () => void,
+): HTMLElement {
+  const section = div({ className: 'command-center__turn-review' });
+  section.appendChild(createSectionHeader('Turn Review'));
+
+  const hasReview = dossier.length > 0;
+  section.appendChild(div({
+    className: 'command-center__dossier-intro',
+    text: hasReview
+      ? pendingCount > 0
+        ? `${pendingCount} action outcomes captured from the latest turn.`
+        : 'Latest turn outcomes are synced. Review your execution first, then rival moves.'
+      : 'Advance a quarter to generate action-by-action review.',
+  }));
+
+  if (!hasReview) {
+    section.appendChild(div({
+      className: 'command-center__dossier-empty',
+      text: 'No turn review entries yet.',
+    }));
+  } else {
+    const playerEntries = dossier.filter((entry) => entry.actorName === playerFactionName);
+    const externalPool = dossier.filter((entry) => entry.actorName !== playerFactionName);
+    const externalEntries = [
+      ...externalPool.filter((entry) => entry.openness === 'open'),
+      ...externalPool.filter((entry) => entry.openness !== 'open'),
+    ].slice(0, 4);
+
+    const laneWrap = div({ className: 'command-center__review-lanes' });
+
+    const playerLane = div({ className: 'command-center__review-lane' });
+    playerLane.appendChild(div({
+      className: 'command-center__directive-subtitle',
+      text: 'Your Actions',
+    }));
+    if (playerEntries.length === 0) {
+      playerLane.appendChild(div({
+        className: 'command-center__directive-empty',
+        text: 'No player action entries available for this turn.',
+      }));
+    } else {
+      const list = div({ className: 'command-center__dossier-list' });
+      for (const entry of playerEntries.slice(0, 4)) {
+        list.appendChild(createDossierCard(entry, true));
+      }
+      playerLane.appendChild(list);
+    }
+    laneWrap.appendChild(playerLane);
+
+    const externalLane = div({ className: 'command-center__review-lane' });
+    externalLane.appendChild(div({
+      className: 'command-center__directive-subtitle',
+      text: 'Key External Events',
+    }));
+    if (externalEntries.length === 0) {
+      externalLane.appendChild(div({
+        className: 'command-center__directive-empty',
+        text: 'No rival action highlights yet.',
+      }));
+    } else {
+      const list = div({ className: 'command-center__dossier-list' });
+      for (const entry of externalEntries) {
+        list.appendChild(createDossierCard(entry));
+      }
+      externalLane.appendChild(list);
+    }
+    laneWrap.appendChild(externalLane);
+    section.appendChild(laneWrap);
+  }
+
+  if (hasReview && onOpenActionReview) {
+    const reviewBtn = button({
+      className: 'command-center__dossier-review-btn',
+      text: 'Open Detailed Action Cards',
+    }) as HTMLButtonElement;
+    reviewBtn.addEventListener('click', onOpenActionReview);
+    section.appendChild(reviewBtn);
+  }
+
+  const logSection = div({ className: 'command-center__review-log command-center__log' });
+  logSection.appendChild(div({
+    className: 'command-center__directive-subtitle',
+    text: 'Recent Outcomes',
+  }));
+  const recentList = el('ul', { className: 'command-center__log-list' });
+  const recentEntries = fullLogEntries.slice(-6).reverse();
+  if (recentEntries.length === 0) {
+    recentList.appendChild(el('li', {
+      className: 'command-center__log-item command-center__log-item--empty',
+      text: 'No logged outcomes yet.',
+    }));
+  } else {
+    for (const entry of recentEntries) {
+      recentList.appendChild(el('li', {
+        className: 'command-center__log-item',
+        text: entry,
+      }));
+    }
+  }
+  logSection.appendChild(recentList);
+
+  const fullLogDetails = el('details', { className: 'command-center__review-log-details' });
+  const summary = el('summary', {
+    className: 'command-center__review-log-summary',
+    text: `Full Log (${fullLogEntries.length})`,
+  });
+  fullLogDetails.appendChild(summary);
+  const fullList = el('ul', { className: 'command-center__log-list command-center__review-log-full' });
+  const cappedFullEntries = fullLogEntries.slice(-120).reverse();
+  if (cappedFullEntries.length === 0) {
+    fullList.appendChild(el('li', {
+      className: 'command-center__log-item command-center__log-item--empty',
+      text: 'No full-log entries yet.',
+    }));
+  } else {
+    for (const entry of cappedFullEntries) {
+      fullList.appendChild(el('li', {
+        className: 'command-center__log-item',
+        text: entry,
+      }));
+    }
+  }
+  fullLogDetails.appendChild(fullList);
+  logSection.appendChild(fullLogDetails);
+  section.appendChild(logSection);
+  return section;
+}
+
+const TARGET_REQUIRED_ACTION_IDS = new Set([
+  'espionage',
+  'subsidize',
+  'regulate',
+  'form_alliance',
+  'executive_order',
+  'strategic_initiative',
+]);
+
+function createDirectiveLockerPanel(
+  lockedDirectives: string[],
+  allowedActions: ActionDefinition[],
+  callbacks: ExpandedCommandCenterCallbacks,
+): HTMLElement {
+  const panel = div({ className: 'command-center__directive-locker' });
+  panel.appendChild(createSectionHeader('Locked Directives And Actions'));
+
+  const lockedSection = div({ className: 'command-center__directive-group' });
+  lockedSection.appendChild(div({
+    className: 'command-center__directive-subtitle',
+    text: 'Locked Directives',
+  }));
+
+  if (!lockedDirectives.length) {
+    lockedSection.appendChild(div({
+      className: 'command-center__directive-empty',
+      text: 'No directives locked. Confirm a directive, then type the next one.',
+    }));
+  } else {
+    const lockedList = div({ className: 'command-center__directive-locked-list' });
+    lockedDirectives.forEach((directive, index) => {
+      const card = div({ className: 'command-center__directive-locked-card' });
+      const header = div({ className: 'command-center__directive-locked-header' });
+      header.appendChild(span({
+        className: 'command-center__directive-locked-slot',
+        text: `Directive ${index + 1}`,
+      }));
+      header.appendChild(span({
+        className: 'command-center__directive-locked-tag',
+        text: 'LOCKED IN',
+      }));
+      card.appendChild(header);
+      card.appendChild(div({
+        className: 'command-center__directive-locked-text',
+        text: directive,
+      }));
+
+      const controls = div({ className: 'command-center__directive-locked-controls' });
+      const changeBtn = button({
+        className: 'command-center__directive-locked-btn',
+        text: 'Change',
+      }) as HTMLButtonElement;
+      changeBtn.addEventListener('click', () => callbacks.onEditLockedDirective?.(index));
+      controls.appendChild(changeBtn);
+
+      const removeBtn = button({
+        className: 'command-center__directive-locked-btn command-center__directive-locked-btn--danger',
+        text: 'Remove',
+      }) as HTMLButtonElement;
+      removeBtn.addEventListener('click', () => callbacks.onRemoveLockedDirective?.(index));
+      controls.appendChild(removeBtn);
+
+      card.appendChild(controls);
+      lockedList.appendChild(card);
+    });
+    lockedSection.appendChild(lockedList);
+  }
+  panel.appendChild(lockedSection);
+
+  const availableSection = div({ className: 'command-center__directive-group' });
+  availableSection.appendChild(div({
+    className: 'command-center__directive-subtitle',
+    text: 'All Available Actions',
+  }));
+  if (!allowedActions.length) {
+    availableSection.appendChild(div({
+      className: 'command-center__directive-empty',
+      text: 'No actions available.',
+    }));
+  } else {
+    const availableList = div({ className: 'command-center__directive-available-list' });
+    for (const action of allowedActions) {
+      const requiresTarget = TARGET_REQUIRED_ACTION_IDS.has(action.id);
+      availableList.appendChild(span({
+        className: `command-center__directive-available-tag${requiresTarget ? ' command-center__directive-available-tag--targeted' : ''}`,
+        text: requiresTarget ? `${action.name} (targeted)` : action.name,
+      }));
+    }
+    availableSection.appendChild(availableList);
+  }
+  panel.appendChild(availableSection);
+
+  return panel;
+}
+
 function createVictorySection(state: GameState, factionId: string): HTMLElement {
   const section = div({ className: 'command-center__victory' });
 
@@ -389,9 +913,6 @@ function createVictorySection(state: GameState, factionId: string): HTMLElement 
   return section;
 }
 
-/**
- * Create a single stat item
- */
 function createStatItem(label: string, value: string): HTMLElement {
   const statDiv = div({ className: 'command-center__stat' });
   const labelSpan = span({
@@ -407,29 +928,24 @@ function createStatItem(label: string, value: string): HTMLElement {
   return statDiv;
 }
 
-/**
- * Create the faction quick stats section
- */
 function createFactionStats(faction: FactionState): HTMLElement {
   const section = div({ className: 'command-center__faction-stats' });
   section.appendChild(createSectionHeader(faction.name));
 
   const stats = div({ className: 'command-center__stats-grid' });
-  stats.appendChild(createStatItem('Capability', String(Math.round(faction.capabilityScore))));
+  stats.appendChild(createStatItem('Capital', String(Math.round(faction.resources.capital))));
   stats.appendChild(createStatItem('Safety', String(Math.round(faction.safetyScore))));
-  stats.appendChild(createStatItem('Trust', `${Math.round(faction.resources.trust)}%`));
+  stats.appendChild(createStatItem('Soft Power', `${Math.round(faction.resources.trust)}%`));
   stats.appendChild(createStatItem('Compute', String(Math.round(faction.resources.compute))));
+  stats.appendChild(createStatItem('Hard Power', String(Math.round(faction.hardPower))));
   section.appendChild(stats);
 
   return section;
 }
 
-/**
- * Create the directive input section
- */
 function createDirectiveInput(
   directiveText: string,
-  onSubmit: (text: string) => void
+  onSubmit: (text: string) => void,
 ): HTMLElement {
   const section = div({ className: 'command-center__directive' });
 
@@ -445,7 +961,7 @@ function createDirectiveInput(
     className: 'command-center__directive-input',
   }) as HTMLInputElement;
   input.type = 'text';
-  input.placeholder = 'Type your orders for this quarter...';
+  input.placeholder = 'Write directive and confirm to lock it in...';
   input.value = directiveText;
 
   const submitBtn = button({
@@ -476,9 +992,6 @@ function createDirectiveInput(
   return section;
 }
 
-/**
- * Create an action button with icon and text
- */
 function createActionButton(
   icon: string,
   text: string,
@@ -493,12 +1006,11 @@ function createActionButton(
   return btn;
 }
 
-/**
- * Create the action buttons row
- */
 function createActionButtons(
   hasPendingEvent: boolean,
   pendingEventCount: number,
+  pendingActionReviewCount: number,
+  commsUnreadCount: number,
   callbacks: ExpandedCommandCenterCallbacks
 ): HTMLElement {
   const row = div({ className: 'command-center__actions' });
@@ -515,11 +1027,44 @@ function createActionButtons(
   // Gamemaster button
   const gmBtn = createActionButton(
     '🎲',
-    'Gamemaster',
+    'Analyst',
     'command-center__action-btn command-center__action-btn--gamemaster',
     callbacks.onOpenGamemaster
   );
   row.appendChild(gmBtn);
+
+  // Faction comms button
+  const chatBtn = createActionButton(
+    '🛰',
+    'Faction Comms',
+    'command-center__action-btn command-center__action-btn--comms',
+    callbacks.onOpenFactionChat
+  );
+  if (commsUnreadCount > 0) {
+    const countSpan = span({
+      className: 'command-center__comms-count',
+      text: String(commsUnreadCount),
+    });
+    chatBtn.appendChild(document.createTextNode(' '));
+    chatBtn.appendChild(countSpan);
+  }
+  row.appendChild(chatBtn);
+
+  if (pendingActionReviewCount > 0 && callbacks.onOpenActionReview) {
+    const reviewBtn = button({
+      className: 'command-center__action-btn command-center__action-btn--review',
+    }) as HTMLButtonElement;
+    const iconSpan = span({ className: 'command-center__action-icon', text: '🧾' });
+    const countSpan = span({
+      className: 'command-center__event-count',
+      text: String(pendingActionReviewCount),
+    });
+    reviewBtn.appendChild(iconSpan);
+    reviewBtn.appendChild(document.createTextNode(' Review '));
+    reviewBtn.appendChild(countSpan);
+    reviewBtn.addEventListener('click', callbacks.onOpenActionReview);
+    row.appendChild(reviewBtn);
+  }
 
   // Events badge (if pending)
   if (hasPendingEvent) {
@@ -541,9 +1086,6 @@ function createActionButtons(
   return row;
 }
 
-/**
- * Create the recent log section
- */
 function createRecentLog(entries: string[]): HTMLElement {
   const section = div({ className: 'command-center__log' });
   section.appendChild(createSectionHeader('Recent Activity'));
@@ -568,42 +1110,31 @@ function createRecentLog(entries: string[]): HTMLElement {
   return section;
 }
 
-/**
- * Create the footer row
- */
-function createFooter(callbacks: ExpandedCommandCenterCallbacks): HTMLElement {
-  const footer = div({ className: 'command-center__footer' });
+function createNarrativeTimeline(entries: string[]): HTMLElement {
+  const section = div({ className: 'command-center__narrative' });
+  section.appendChild(createSectionHeader('Turn Narrative'));
 
-  // Reset button
-  const resetBtn = button({
-    className: 'command-center__footer-btn',
-  });
-  resetBtn.textContent = 'Reset';
-  resetBtn.addEventListener('click', callbacks.onReset);
-  footer.appendChild(resetBtn);
+  const list = el('ol', { className: 'command-center__narrative-list' });
+  const visible = entries.slice(0, 10);
 
-  // Stats button
-  const statsBtn = button({
-    className: 'command-center__footer-btn',
-  });
-  statsBtn.textContent = 'Stats';
-  statsBtn.addEventListener('click', callbacks.onStats);
-  footer.appendChild(statsBtn);
+  if (visible.length === 0) {
+    const emptyItem = el('li', {
+      className: 'command-center__narrative-item command-center__narrative-item--empty',
+    });
+    emptyItem.textContent = 'Advance a quarter to see narrated outcomes.';
+    list.appendChild(emptyItem);
+  } else {
+    for (const entry of visible) {
+      const item = el('li', { className: 'command-center__narrative-item' });
+      item.textContent = entry;
+      list.appendChild(item);
+    }
+  }
 
-  // Keys/Help button
-  const keysBtn = button({
-    className: 'command-center__footer-btn',
-  });
-  keysBtn.textContent = 'Keys (?)';
-  keysBtn.addEventListener('click', callbacks.onHelp);
-  footer.appendChild(keysBtn);
-
-  return footer;
+  section.appendChild(list);
+  return section;
 }
 
-/**
- * Renders the ExpandedCommandCenter component
- */
 export function renderExpandedCommandCenter(
   options: ExpandedCommandCenterOptions,
   callbacks: ExpandedCommandCenterCallbacks
@@ -644,13 +1175,12 @@ export function renderExpandedCommandCenter(
 
   // Advance button inline in the turn bar
   const buttonText = getAdvanceButtonText(campaignStarted, hasPendingEvent, gameState.gameOver);
-  const isDisabled = !campaignStarted || gameState.gameOver || hasPendingEvent;
+  const isDisabled = !campaignStarted || gameState.gameOver;
   const advanceBtn = el('button', {
     className: 'command-center__advance-btn',
   }) as HTMLButtonElement;
   advanceBtn.textContent = buttonText;
   advanceBtn.disabled = isDisabled;
-  advanceBtn.addEventListener('click', callbacks.onAdvanceTurn);
   turnBar.appendChild(advanceBtn);
 
   container.appendChild(turnBar);
@@ -660,6 +1190,20 @@ export function renderExpandedCommandCenter(
 
   // Left column: Situations (the main game content)
   const leftCol = div({ className: 'command-center__left-col' });
+  leftCol.appendChild(createDirectiveLockerPanel(
+    options.lockedDirectives ?? [],
+    options.allowedActions ?? [],
+    callbacks,
+  ));
+  leftCol.appendChild(createTurnReviewSection(
+    options.actionDossier ?? [],
+    options.pendingActionReviewCount ?? 0,
+    faction.name,
+    options.fullLogEntries ?? [],
+    callbacks.onOpenActionReview,
+  ));
+  leftCol.appendChild(createAgiFrontierMap(gameState, playerFactionId));
+  leftCol.appendChild(createGeopoliticalMap(gameState, playerFactionId));
   leftCol.appendChild(createSituationsSection(situations, callbacks.onSuggestedAction));
   mainContent.appendChild(leftCol);
 
@@ -674,44 +1218,24 @@ export function renderExpandedCommandCenter(
   // Directive input
   container.appendChild(createDirectiveInput(
     options.directiveText || '',
-    callbacks.onDirectiveSubmit
+    callbacks.onDirectiveSubmit,
   ));
 
   // Action bar at bottom
-  container.appendChild(createActionButtons(hasPendingEvent, pendingEventCount, callbacks));
+  container.appendChild(createActionButtons(
+    hasPendingEvent,
+    pendingEventCount,
+    options.pendingActionReviewCount ?? 0,
+    options.commsUnreadCount ?? 0,
+    callbacks,
+  ));
 
-  // Recent log
-  container.appendChild(createRecentLog(options.recentLog || []));
+  // Narrative timeline
+  container.appendChild(createNarrativeTimeline(options.narrativeFeed || []));
 
   return container;
 }
 
-/**
- * Update the ExpandedCommandCenter with new state
- */
-export function updateExpandedCommandCenter(
-  container: HTMLElement,
-  options: Partial<ExpandedCommandCenterOptions>
-): void {
-  // Update turn date
-  if (options.gameState) {
-    const turnDate = container.querySelector('.command-center__turn-date');
-    if (turnDate) {
-      turnDate.textContent = formatTurnDate(options.gameState.year, options.gameState.quarter);
-    }
-
-    const turnNumber = container.querySelector('.command-center__turn-number');
-    if (turnNumber) {
-      turnNumber.textContent = formatTurnNumber(options.gameState.turn);
-    }
-  }
-
-  // More updates can be added as needed
-}
-
-/**
- * CSS styles for the ExpandedCommandCenter component
- */
 export const EXPANDED_COMMAND_CENTER_STYLES = `
 /* Expanded Command Center - v3 Intelligence Briefing Layout */
 .command-center {
@@ -787,8 +1311,10 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
 .command-center__left-col {
   display: flex;
   flex-direction: column;
+  gap: 16px;
   overflow-y: auto;
   padding: 20px 32px;
+  position: relative;
 }
 
 .command-center__right-col {
@@ -798,6 +1324,400 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
   border-left: 1px solid var(--line);
   overflow-y: auto;
   background: var(--bg-warm, #eae7e1);
+}
+
+.command-center__directive-locker {
+  border: 1px solid var(--line);
+  background: var(--panel, #fff);
+  padding: 14px;
+}
+
+.command-center__directive-group {
+  margin-bottom: 12px;
+}
+
+.command-center__directive-subtitle {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--muted));
+  margin-bottom: 6px;
+}
+
+.command-center__directive-empty {
+  border: 1px dashed var(--line);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-3, var(--muted));
+}
+
+.command-center__directive-locked-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.command-center__directive-locked-card {
+  border: 1px solid var(--line);
+  background: var(--panel-soft, #f8f6f2);
+  padding: 8px 10px;
+}
+
+.command-center__directive-locked-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.command-center__directive-locked-slot {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--muted));
+}
+
+.command-center__directive-locked-tag {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1d5a3d;
+  background: rgba(29, 90, 61, 0.12);
+  padding: 2px 6px;
+}
+
+.command-center__directive-locked-text {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.command-center__directive-locked-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.command-center__directive-locked-btn {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.command-center__directive-locked-btn--danger {
+  color: var(--danger, #8b2020);
+}
+
+.command-center__directive-available-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.command-center__directive-available-tag {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-2, #4a4a4a);
+  padding: 4px 7px;
+  font-size: 10px;
+}
+
+.command-center__directive-available-tag--targeted {
+  border-color: rgba(122, 60, 18, 0.35);
+  color: #7a3c12;
+  background: rgba(122, 60, 18, 0.08);
+}
+
+.command-center__agi-map {
+  border: 1px solid var(--line);
+  background: var(--panel-soft, #f8f6f2);
+  padding: 14px 14px 12px;
+}
+
+.command-center__geo-map {
+  border: 1px solid var(--line);
+  background: var(--panel-soft, #f8f6f2);
+  padding: 14px 14px 12px;
+}
+
+.command-center__geo-svg {
+  width: 100%;
+  height: 220px;
+  display: block;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: linear-gradient(180deg, rgba(40, 80, 120, 0.12), rgba(40, 80, 120, 0.04));
+  border-radius: 6px;
+}
+
+.command-center__geo-land {
+  fill: rgba(120, 140, 150, 0.22);
+  stroke: rgba(120, 140, 150, 0.35);
+  stroke-width: 1;
+}
+
+.command-center__geo-land--south {
+  fill: rgba(120, 140, 150, 0.16);
+}
+
+.command-center__geo-link {
+  stroke-width: 2.5;
+}
+
+.command-center__geo-link--tension {
+  stroke: rgba(220, 70, 70, 1);
+  stroke-dasharray: 5 4;
+}
+
+.command-center__geo-link--alliance {
+  stroke: rgba(60, 190, 120, 1);
+}
+
+.command-center__geo-node-ring {
+  fill: transparent;
+  stroke: rgba(255, 255, 255, 0.6);
+  stroke-width: 1.5;
+}
+
+.command-center__geo-node--player .command-center__geo-node-ring {
+  stroke: rgba(255, 255, 255, 0.85);
+  stroke-width: 2;
+}
+
+.command-center__geo-node-dot--lab {
+  fill: rgba(245, 155, 84, 0.95);
+  stroke: rgba(20, 20, 20, 0.28);
+  stroke-width: 1;
+}
+
+.command-center__geo-node-dot--government {
+  fill: rgba(120, 150, 245, 0.95);
+  stroke: rgba(20, 20, 20, 0.28);
+  stroke-width: 1;
+}
+
+.command-center__geo-node--player .command-center__geo-node-dot--lab,
+.command-center__geo-node--player .command-center__geo-node-dot--government {
+  fill: rgba(255, 255, 255, 0.92);
+  stroke: rgba(0, 0, 0, 0.22);
+}
+
+.command-center__geo-node-label {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  fill: rgba(20, 20, 20, 0.78);
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.command-center__geo-legend {
+  margin-top: 8px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-2, var(--muted));
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+}
+
+.command-center__geo-legend-item {
+  opacity: 0.9;
+}
+
+.command-center__agi-map-summary {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3, var(--muted));
+  margin-bottom: 10px;
+}
+
+.command-center__agi-milestones {
+  position: relative;
+  height: 28px;
+  margin: 0 6px 8px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.2);
+}
+
+.command-center__agi-milestone {
+  position: absolute;
+  top: -10px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.command-center__agi-milestone-tick {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  color: var(--text-4, #8a847d);
+  line-height: 1;
+}
+
+.command-center__agi-milestone-label {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  color: var(--text-4, #8a847d);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.command-center__agi-race-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.command-center__agi-race-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 36px;
+  gap: 8px;
+  align-items: center;
+}
+
+.command-center__agi-race-row--player {
+  background: rgba(22, 71, 52, 0.08);
+  border: 1px solid rgba(22, 71, 52, 0.2);
+  padding: 6px 8px;
+}
+
+.command-center__agi-race-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.command-center__agi-race-name {
+  font-size: 11px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.command-center__agi-race-you {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.command-center__agi-race-breakthrough {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #325b89;
+  background: rgba(50, 91, 137, 0.1);
+  padding: 1px 4px;
+}
+
+.command-center__agi-race-track {
+  position: relative;
+  height: 8px;
+  background: rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  overflow: visible;
+}
+
+.command-center__agi-race-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--race-color);
+  opacity: 0.58;
+}
+
+.command-center__agi-race-marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--race-color);
+  font-size: 11px;
+  line-height: 1;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.2);
+}
+
+.command-center__agi-race-marker--breakthrough {
+  color: #1f4f7d;
+}
+
+.command-center__agi-race-value {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 11px;
+  text-align: right;
+  color: var(--ink);
+}
+
+.command-center__agi-readiness {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.command-center__agi-readiness-item {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.command-center__agi-readiness-item--ready {
+  border-color: rgba(29, 88, 62, 0.35);
+}
+
+.command-center__agi-readiness-item--tracking {
+  border-color: rgba(109, 82, 24, 0.28);
+}
+
+.command-center__agi-readiness-item--lagging {
+  border-color: rgba(130, 36, 36, 0.24);
+}
+
+.command-center__agi-readiness-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.command-center__agi-readiness-label {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--muted));
+}
+
+.command-center__agi-readiness-value {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  color: var(--ink);
+}
+
+.command-center__agi-readiness-meter {
+  height: 5px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.command-center__agi-readiness-fill {
+  height: 100%;
+  background: var(--accent);
 }
 
 /* Custom scrollbar */
@@ -833,6 +1753,189 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
 /* Strategic Situations — the main game content */
 .command-center__situations {
   flex: 1;
+}
+
+.command-center__dossier {
+  margin-bottom: 14px;
+}
+
+.command-center__turn-review {
+  border: 1px solid var(--line);
+  background: var(--panel-soft, #f8f6f2);
+  padding: 14px;
+}
+
+.command-center__review-lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.command-center__review-lane {
+  min-width: 0;
+}
+
+.command-center__dossier-intro {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-3, var(--muted));
+  margin-bottom: 8px;
+}
+
+.command-center__dossier-review-btn {
+  border: 1px solid var(--accent);
+  background: rgba(22, 71, 52, 0.08);
+  color: var(--accent);
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.command-center__dossier-review-btn:hover {
+  background: rgba(22, 71, 52, 0.14);
+}
+
+.command-center__dossier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.command-center__dossier-card {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.64);
+  padding: 10px 12px;
+}
+
+.command-center__dossier-card--player {
+  border-left-color: #1f5a40;
+  background: rgba(31, 90, 64, 0.08);
+}
+
+.command-center__dossier-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.command-center__dossier-actor {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3, var(--muted));
+}
+
+.command-center__dossier-tag {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 6px;
+}
+
+.command-center__dossier-tag--open {
+  color: #1f5a40;
+  background: rgba(31, 90, 64, 0.1);
+}
+
+.command-center__dossier-tag--secret {
+  color: #7a3c12;
+  background: rgba(122, 60, 18, 0.1);
+}
+
+.command-center__dossier-source {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+}
+
+.command-center__dossier-source--llm {
+  color: #1f4f7d;
+  background: rgba(31, 79, 125, 0.1);
+}
+
+.command-center__dossier-source--deterministic {
+  color: #1e4b35;
+  background: rgba(30, 75, 53, 0.1);
+}
+
+.command-center__dossier-source--error {
+  color: #8b2020;
+  background: rgba(139, 32, 32, 0.12);
+}
+
+.command-center__dossier-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.command-center__dossier-summary {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #3f3b35;
+}
+
+.command-center__dossier-intel {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line);
+  font-size: 11px;
+  color: #59544d;
+}
+
+.command-center__dossier-empty {
+  border: 1px dashed var(--line);
+  padding: 10px;
+  font-size: 12px;
+  color: var(--text-3, var(--muted));
+}
+
+.command-center__review-log {
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  max-height: 280px;
+}
+
+.command-center__review-log-details {
+  margin-top: 8px;
+  border-top: 1px dashed var(--line);
+  padding-top: 8px;
+}
+
+.command-center__review-log-summary {
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.command-center__review-log-full {
+  margin-top: 8px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 
 .command-center__situations-empty {
@@ -1040,6 +2143,14 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
   background: var(--danger-bg, rgba(139, 32, 32, 0.06));
 }
 
+.command-center__action-btn--review {
+  color: var(--accent);
+}
+
+.command-center__action-btn--review:hover {
+  background: rgba(22, 71, 52, 0.08);
+}
+
 .command-center__action-icon {
   font-size: 15px;
 }
@@ -1052,6 +2163,20 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
   height: 16px;
   padding: 0 4px;
   background: var(--danger);
+  color: white;
+  border-radius: 1px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.command-center__comms-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  background: var(--accent);
   color: white;
   border-radius: 1px;
   font-size: 9px;
@@ -1121,6 +2246,36 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
 
 .command-center__directive-submit:hover {
   background: var(--accent-bright);
+}
+
+/* Narrative timeline */
+.command-center__narrative {
+  padding: 12px 32px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.command-center__narrative-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.command-center__narrative-item {
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.45;
+  font-family: var(--mono, 'IBM Plex Mono', monospace);
+}
+
+.command-center__narrative-item--empty {
+  list-style: none;
+  margin-left: -20px;
+  color: var(--text-4, #aaa);
+  font-style: italic;
 }
 
 /* Recent Log */
@@ -1200,6 +2355,22 @@ export const EXPANDED_COMMAND_CENTER_STYLES = `
 
   .command-center__turn-date {
     font-size: 18px;
+  }
+
+  .command-center__agi-race-row {
+    grid-template-columns: 100px 1fr 30px;
+  }
+
+  .command-center__agi-milestone-label {
+    font-size: 7px;
+  }
+
+  .command-center__agi-readiness {
+    grid-template-columns: 1fr;
+  }
+
+  .command-center__review-lanes {
+    grid-template-columns: 1fr;
   }
 }
 `;
