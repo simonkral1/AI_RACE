@@ -1,6 +1,13 @@
 # AGI Race Agent Handoff
 
-Last updated: 2026-06-10
+Last updated: 2026-06-11
+
+Update (2026-06-11): UI overhaul on branch `ui-overhaul`.
+  - Command center decluttered: removed vestigial Geopolitical Map section (duplicated canvas world map). Remaining sections: turn bar (advance button), directive locker + locked directives, turn review / action dossier, AGI frontier race, strategic situations, faction stats, victory progress, directive input, action bar (tech/analyst/comms/events), narrative timeline.
+  - Tech tree now renders as a left-to-right tier graph (BranchScreen.ts) with SVG bezier-curve connectors between prerequisite nodes. Locked/available/owned edges use distinct styles. Layout uses calcGridLayout which minimises line crossings.
+  - Capabilities branch has 3 explicit sub-paths: Scaling (long_context → compute_optimal_training → world_models), Agents (tool_use → unreliable_agent → coding_automation → reliable_agent → agent_swarms), Reasoning (chain_of_thought → inference_time_compute → extended_reasoning). All three converge at superhuman_coder.
+  - Safety branch has 3 explicit sub-paths: Interpretability (basic_interp → sparse_autoencoders → circuit_analysis → feature_steering), Alignment (rlhf → constitutional_ai → cot_monitoring → value_alignment), Governance (evals_framework → red_teaming → adversarial_robustness → staged_deployment). All converge at scalable_oversight.
+  - IntroSequence rewritten as 4 narrative beats + 1 optional mechanics beat (techno-thriller tone). Faction selection screen adds 1-2 sentence descriptions per faction (identity, playstyle, special ability, victory path).
 
 Update (2026-06-10): The central screen is a cinematic canvas satellite map
 (`src/ui/components/WorldMapCanvas.ts`, NASA Blue Marble textures in `public/assets/`; the older SVG
