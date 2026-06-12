@@ -279,15 +279,26 @@ export function renderMiniVictoryBars(
   const container = createElement('div', { className: 'victory-mini-bars' });
 
   for (const item of victoryItems) {
+    // Full tooltip with label, progress percentage, and current status
+    const tooltipText = `${item.label}: ${item.progress}%\n${item.currentStatus}`;
+
     const barWrapper = createElement('div', {
       className: 'victory-mini-bars__item',
-      title: `${item.label}: ${item.progress}%`,
+      title: tooltipText,
     });
 
     const icon = createElement('span', {
       className: 'victory-mini-bars__icon',
       textContent: VICTORY_ICONS[item.type],
     });
+
+    // Visible text label (not just icon)
+    const labelEl = createElement('span', {
+      className: 'victory-mini-bars__label',
+      textContent: item.label,
+    });
+
+    const barGroup = createElement('div', { className: 'victory-mini-bars__bar-group' });
 
     const bar = createElement('div', { className: 'victory-mini-bars__bar' });
     const fill = createElement('div', {
@@ -296,8 +307,17 @@ export function renderMiniVictoryBars(
     });
     bar.appendChild(fill);
 
+    const pct = createElement('span', {
+      className: 'victory-mini-bars__pct',
+      textContent: `${item.progress}%`,
+    });
+
+    barGroup.appendChild(bar);
+    barGroup.appendChild(pct);
+
     barWrapper.appendChild(icon);
-    barWrapper.appendChild(bar);
+    barWrapper.appendChild(labelEl);
+    barWrapper.appendChild(barGroup);
     container.appendChild(barWrapper);
   }
 
@@ -525,23 +545,43 @@ export const VICTORY_TRACKER_STYLES = `
 /* Mini bars styles */
 .victory-mini-bars {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .victory-mini-bars__item {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   cursor: help;
 }
 
 .victory-mini-bars__icon {
-  font-size: 12px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.victory-mini-bars__label {
+  font-size: 11px;
+  color: var(--text-primary, #1a1a1a);
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.victory-mini-bars__bar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .victory-mini-bars__bar {
-  width: 40px;
-  height: 4px;
+  width: 56px;
+  height: 5px;
   background: rgba(0, 0, 0, 0.08);
   border-radius: 2px;
   overflow: hidden;
@@ -551,5 +591,13 @@ export const VICTORY_TRACKER_STYLES = `
   height: 100%;
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+.victory-mini-bars__pct {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary, #7a7a7a);
+  min-width: 28px;
+  text-align: right;
 }
 `;

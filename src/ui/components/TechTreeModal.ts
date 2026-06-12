@@ -175,10 +175,14 @@ export class TechTreeModal {
     };
     document.addEventListener('keydown', this.keyHandler);
 
-    // Trigger entrance animation
+    // Trigger entrance animation — double rAF ensures the browser has painted
+    // the initial opacity:0 state before transitioning, preventing the ~3s
+    // perceived delay caused by DOM construction blocking the first frame.
     requestAnimationFrame(() => {
-      this.overlay?.classList.add('is-visible');
-      this.modal?.classList.add('is-visible');
+      requestAnimationFrame(() => {
+        this.overlay?.classList.add('is-visible');
+        this.modal?.classList.add('is-visible');
+      });
     });
   }
 
@@ -279,7 +283,7 @@ export const TECH_TREE_MODAL_STYLES = `
   place-items: center;
   z-index: 100;
   opacity: 0;
-  transition: opacity var(--duration-slow, 300ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+  transition: opacity 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .tech-tree-modal-overlay.is-visible {
@@ -300,8 +304,8 @@ export const TECH_TREE_MODAL_STYLES = `
   transform: scale(0.95) translateY(10px);
   opacity: 0;
   transition:
-    transform var(--duration-slow, 300ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
-    opacity var(--duration-slow, 300ms) var(--ease-out, cubic-bezier(0.22, 1, 0.36, 1));
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .tech-tree-modal.is-visible {

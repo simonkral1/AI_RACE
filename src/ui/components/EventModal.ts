@@ -13,6 +13,7 @@
 
 import type { EventDefinition, EventChoice, EventEffect } from '../../data/events.js';
 import { el, div, button, span } from './base.js';
+import { formatSingleEffect } from '../../core/effectFormatter.js';
 
 export interface EventModalCallbacks {
   onChoice: (choiceId: string) => void;
@@ -28,37 +29,17 @@ const ENTRANCE_DURATION = 300;
 const CHOICE_STAGGER_DELAY = 80;
 
 /**
- * Format effect preview text with color coding
+ * Format effect preview with human-readable labels and correct signs.
+ * Uses the shared effectFormatter for consistent labelling everywhere.
  */
 function formatEffectPreview(effects: EventEffect[]): HTMLElement {
   const container = div({ className: 'event-modal__effects' });
 
   for (const effect of effects) {
     const delta = 'delta' in effect ? effect.delta : 0;
-    const sign = delta >= 0 ? '+' : '';
     const colorClass = delta >= 0 ? 'event-modal__effect--positive' : 'event-modal__effect--negative';
-
-    let label = '';
-    switch (effect.kind) {
-      case 'resource':
-        label = `${sign}${delta} ${effect.key}`;
-        break;
-      case 'score':
-        label = `${sign}${delta} ${effect.key === 'capabilityScore' ? 'capability' : 'safety'}`;
-        break;
-      case 'stat':
-        label = `${sign}${delta} ${effect.key}`;
-        break;
-      case 'research':
-        label = `${sign}${delta} ${effect.branch} research`;
-        break;
-      case 'globalSafety':
-        label = `${sign}${delta} global safety`;
-        break;
-      case 'exposure':
-        label = `${sign}${delta} exposure`;
-        break;
-    }
+    const label = formatSingleEffect(effect);
+    if (!label) continue;
 
     const effectEl = span({
       className: `event-modal__effect ${colorClass}`,
@@ -71,7 +52,8 @@ function formatEffectPreview(effects: EventEffect[]): HTMLElement {
 }
 
 /**
- * Create a choice button element
+ * Create a choice button element with double-click guard.
+ * The first click disables all sibling choices before invoking the callback.
  */
 function createChoiceButton(
   choice: EventChoice,
@@ -80,7 +62,18 @@ function createChoiceButton(
 ): HTMLElement {
   const choiceEl = button({
     className: 'event-modal__choice',
-    onClick,
+    onClick: () => {
+      // Double-click guard: disable every choice in the same container immediately
+      const container = choiceEl.closest('.event-modal__choices');
+      if (container) {
+        for (const btn of container.querySelectorAll<HTMLButtonElement>('.event-modal__choice')) {
+          btn.disabled = true;
+          btn.style.pointerEvents = 'none';
+          btn.style.opacity = '0.5';
+        }
+      }
+      onClick();
+    },
   });
 
   // Add stagger animation delay
