@@ -6,12 +6,22 @@ import {
   BranchId,
 } from '../core/types.js';
 import { EventDefinition, EventChoice } from '../data/events.js';
-import { callLlm, LlmMessage, LlmCallOptions } from './llmClient.js';
+import {
+  gmExplain,
+  gmAdvice,
+  gmNarrateEvent,
+  gmRespondDirective,
+  gmInterpretDirective,
+  gmSummary,
+  gmAsk,
+  gmOpening,
+  gmTurnSummary,
+  gmIntroduceEvent,
+  gmActionReview,
+} from './gmClient.js';
 import { extractJsonSnippet } from './llmParsing.js';
 
 const GENERIC_TEXT_FALLBACK = 'The AGI race continues. Choose your path wisely.';
-const DEFAULT_GAMEMASTER_MODEL = 'google/gemini-3-flash';
-const DEFAULT_GAMEMASTER_REASONING_EFFORT: NonNullable<LlmCallOptions['reasoningEffort']> = 'low';
 const DEFAULT_GAMEMASTER_TIMEOUT_MS = 20_000;
 
 /**
@@ -460,18 +470,6 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, fallback: T): Pr
       });
   });
 
-const readGamemasterModel = (): string => {
-  try {
-    const envModel = (import.meta as { env?: Record<string, string> }).env?.VITE_GAMEMASTER_MODEL;
-    if (envModel && envModel.trim().length > 0) {
-      return envModel.trim();
-    }
-  } catch {
-    // No-op: env may not be available in this runtime.
-  }
-  return DEFAULT_GAMEMASTER_MODEL;
-};
-
 const pickAnswerField = (value: unknown): string | null => {
   if (!value || typeof value !== 'object') return null;
   const obj = value as Record<string, unknown>;
@@ -552,48 +550,6 @@ const buildJsonAnswerInstruction = (maxWords: number): string =>
     '- Do not mention prompts, instructions, word limits, or internal reasoning.',
     `- Keep the answer under ${maxWords} words.`,
   ].join('\n');
-
-// System prompt for the gamemaster personality
-const getSystemPrompt = (personality: PersonalityConfig): string => {
-  const toneDescriptions: Record<PersonalityConfig['tone'], string> = {
-    neutral: 'balanced, wise, and analytical',
-    ominous: 'wise and caution-heavy with explicit risk framing',
-    encouraging: 'constructive and pragmatic while staying evidence-based',
-    dramatic: 'high-urgency but still analytical and decision-focused',
-  };
-
-  const verbosityDescriptions: Record<PersonalityConfig['verbosity'], string> = {
-    brief: 'concise, using 1-2 sentences',
-    moderate: 'balanced, using 2-4 sentences',
-    verbose: 'detailed, using 4-6 sentences with rich description',
-  };
-
-  const riskDescriptions: Record<PersonalityConfig['riskEmphasis'], string> = {
-    low: 'focuses on stability and incremental risk notes',
-    medium: 'balances competitive pressure with risk controls',
-    high: 'prioritizes downside risk and catastrophic-prevention framing',
-  };
-
-  return `You are the Strategic Analyst of AGI Race, a strategy simulation about the development of artificial general intelligence.
-
-Your personality: ${toneDescriptions[personality.tone]}.
-Your verbosity: ${verbosityDescriptions[personality.verbosity]}.
-Your risk emphasis: ${riskDescriptions[personality.riskEmphasis]}.
-
-You guide players with structured briefings: what happened, why it happened, and what to do next. You are wise, knowledgeable about AI safety research, and focused on decision quality under uncertainty.
-
-When explaining mechanics, be clear and helpful.
-When describing events, be analytical and concrete.
-When giving advice, include explicit tradeoffs and likely consequences.
-When interpreting directives, be fair but realistic about consequences.
-Always write like a human strategic brief, not telemetry output.
-Do NOT expose internal labels, IDs, variable names, or code-like tokens (for example: cap_unreliable_agent, safetyScore, factionId).
-Translate raw metrics into plain language ("improved slightly", "stagnated", "deteriorated") unless an exact number is essential.
-
-Remember: In this game, deploying unsafe AGI leads to catastrophe for everyone. The goal is to win the race while maintaining adequate safety standards.
-
-IMPORTANT: Respond directly with your answer only. Do NOT include your thinking process, reasoning steps, or phrases like "let me think" or "the user is asking". Just give the final response.`;
-};
 
 // Format state for prompts
 const formatStateForPrompt = (state: GameState, factionId?: string): string => {
@@ -853,76 +809,33 @@ const validateEffect = (effect: unknown, state: GameState): GmEffect | null => {
 };
 
 // Create the gamemaster instance
+// Note: config.personality is accepted for API compatibility but personality now lives
+// in the server-side GM system prompt (server/agentServer.ts GM_SYSTEM_PROMPT).
 export const createGamemaster = (config?: GamemasterConfig): Gamemaster => {
-  const personality: PersonalityConfig = {
-    ...DEFAULT_PERSONALITY,
-    ...config?.personality,
-  };
   const maxHistorySize = config?.maxHistorySize ?? MAX_HISTORY_SIZE;
   const history: GameEvent[] = [];
 
-  const systemPrompt = getSystemPrompt(personality);
-  const gamemasterModel = readGamemasterModel();
-
-  const repairLeakyResponse = async (draft: string, config: TextOutputConfig): Promise<string | null> => {
-    const repairMessages: LlmMessage[] = [
-      {
-        role: 'system',
-        content:
-          'You transform source text into a clean final response for a game player. Never include analysis or planning.',
-      },
-      {
-        role: 'user',
-        content: `Convert this source text into final player-facing text.
-
-${buildJsonAnswerInstruction(config.maxWords)}
-
-Source text:
-${draft}`,
-      },
-    ];
-
-    const repaired = await callLlm(repairMessages, {
-      maxTokens: Math.max(120, Math.min(360, config.maxWords * 4)),
-      temperature: 0,
-      topP: 0.8,
-      model: gamemasterModel,
-      reasoningEffort: DEFAULT_GAMEMASTER_REASONING_EFFORT,
-      responseFormat: { type: 'json_object' },
-      timeoutMs: DEFAULT_GAMEMASTER_TIMEOUT_MS,
-    });
-
-    if (!repaired) return null;
-    return sanitizePlayerFacingText(repaired, config, { jsonOnly: true });
-  };
-
-  const callForText = async (
-    messages: LlmMessage[],
-    options: LlmCallOptions,
-    config: TextOutputConfig,
-    fallback = UNAVAILABLE_RESPONSE,
+  /**
+   * Call a GM endpoint, run the result through sanitization, and fall back to
+   * the supplied deterministic text if the server returns null or the response
+   * is unusable. This replaces the old callLlm-based callForText helper.
+   */
+  const callForTextViaGm = async (
+    gmFn: (prompt: string) => Promise<string | null>,
+    prompt: string,
+    outputConfig: TextOutputConfig,
+    fallback: string,
   ): Promise<string> => {
     try {
-      const safeResponse = await withTimeout(
-        callLlm(messages, {
-          ...options,
-          model: options.model ?? gamemasterModel,
-          reasoningEffort: options.reasoningEffort ?? DEFAULT_GAMEMASTER_REASONING_EFFORT,
-          responseFormat: options.responseFormat ?? { type: 'json_object' },
-          timeoutMs: options.timeoutMs ?? DEFAULT_GAMEMASTER_TIMEOUT_MS,
-        }),
-        options.timeoutMs ?? DEFAULT_GAMEMASTER_TIMEOUT_MS,
+      const raw = await withTimeout(
+        gmFn(prompt),
+        DEFAULT_GAMEMASTER_TIMEOUT_MS,
         null,
       );
-      if (!safeResponse) return fallback;
+      if (!raw) return fallback;
 
-      const sanitized = sanitizePlayerFacingText(safeResponse, config);
-      const rawLooksLeaky = LEAK_PATTERNS.some((pattern) => pattern.test(safeResponse));
-
-      if (sanitized && !rawLooksLeaky) return sanitized;
-
-      const repaired = rawLooksLeaky ? await repairLeakyResponse(safeResponse, config) : null;
-      if (repaired) return repaired;
+      const sanitized = sanitizePlayerFacingText(raw, outputConfig);
+      if (sanitized && !LEAK_PATTERNS.some((p) => p.test(raw))) return sanitized;
       if (sanitized) return sanitized;
       return fallback;
     } catch {
@@ -931,57 +844,37 @@ ${draft}`,
   };
 
   const explainMechanics = async (topic: string): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'mechanic', maxWords: 80, maxSentences: 4 };
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Explain this game mechanic briefly (2-3 sentences): "${topic}"`,
-      },
-    ];
-    return callForText(messages, { maxTokens: 150, temperature: 0.4 }, config, fallbackMechanic(topic));
+    const outputConfig: TextOutputConfig = { kind: 'mechanic', maxWords: 80, maxSentences: 4 };
+    const prompt = `Explain this game mechanic briefly (2-3 sentences): "${topic}"\n\n${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(gmExplain, prompt, outputConfig, fallbackMechanic(topic));
   };
 
   const getStrategicAdvice = async (state: GameState, factionId?: string): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'advice', maxWords: 60, maxSentences: 3, requireActionable: true };
+    const outputConfig: TextOutputConfig = { kind: 'advice', maxWords: 60, maxSentences: 3, requireActionable: true };
     const stateJson = formatCompactStateForPrompt(state, factionId);
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Game state: ${stateJson}
-
-Give 1-2 sentences of strategic advice for ${factionId ? `faction "${factionId}"` : 'the player'}. Be direct and actionable.`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 150, temperature: 0.5 },
-      config,
+    const prompt = `Game state: ${stateJson}\n\nGive 1-2 sentences of strategic advice for ${factionId ? `faction "${factionId}"` : 'the player'}. Be direct and actionable.\n\n${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(
+      gmAdvice,
+      prompt,
+      outputConfig,
       TEMPLATE_RESPONSES.advice(state, factionId),
     );
   };
 
   const narrateEvent = async (event: EventDefinition, choice: EventChoice): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'event', maxWords: 90, maxSentences: 5 };
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Event: ${event.title}
+    const outputConfig: TextOutputConfig = { kind: 'event', maxWords: 90, maxSentences: 5 };
+    const prompt = `Event: ${event.title}
 Description: ${event.description}
 Player choice: ${choice.label}
 Choice details: ${choice.description}
 
 Provide an immediate consequence brief in 2-4 analytical sentences. Focus on impact, risk, and momentum changes.
 
-${buildJsonAnswerInstruction(config.maxWords)}`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 220, temperature: 0.7 },
-      config,
+${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(
+      gmNarrateEvent,
+      prompt,
+      outputConfig,
       `Event outcome brief: ${event.title} -> ${choice.label}. ${choice.description}`,
     );
   };
@@ -989,13 +882,9 @@ ${buildJsonAnswerInstruction(config.maxWords)}`,
   const respondToDirective = async (
     directive: string,
     state: GameState,
-    factionId: string
+    factionId: string,
   ): Promise<DirectiveResponse> => {
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Game state:
+    const prompt = `Game state:
 ${formatStateForPrompt(state, factionId)}
 
 Faction: ${factionId}
@@ -1007,33 +896,18 @@ Rules:
 - Keep narrative concise and player-facing.
 - Effects must be modest and plausible for one quarter.
 - Use only valid effect kinds and keys.
-- Use empty effects array when no clear mechanical effect applies.`,
-      },
-    ];
+- Use empty effects array when no clear mechanical effect applies.`;
 
     try {
-      const raw = await callLlm(messages, {
-        maxTokens: 260,
-        temperature: 0.4,
-        model: gamemasterModel,
-        reasoningEffort: DEFAULT_GAMEMASTER_REASONING_EFFORT,
-        responseFormat: { type: 'json_object' },
-        timeoutMs: DEFAULT_GAMEMASTER_TIMEOUT_MS,
-      });
-      if (!raw) {
-        return {
-          narrative: DIRECTIVE_FALLBACK_NARRATIVE,
-          effects: [],
-        };
-      }
+      const raw = await withTimeout(
+        gmRespondDirective(prompt),
+        DEFAULT_GAMEMASTER_TIMEOUT_MS,
+        null,
+      );
+      if (!raw) return { narrative: DIRECTIVE_FALLBACK_NARRATIVE, effects: [] };
 
       const snippet = extractJsonSnippet(raw, 'object');
-      if (!snippet) {
-        return {
-          narrative: DIRECTIVE_FALLBACK_NARRATIVE,
-          effects: [],
-        };
-      }
+      if (!snippet) return { narrative: DIRECTIVE_FALLBACK_NARRATIVE, effects: [] };
 
       const parsed = JSON.parse(snippet) as Record<string, unknown>;
       const rawNarrative =
@@ -1049,10 +923,7 @@ Rules:
 
       return { narrative, effects };
     } catch {
-      return {
-        narrative: DIRECTIVE_FALLBACK_NARRATIVE,
-        effects: [],
-      };
+      return { narrative: DIRECTIVE_FALLBACK_NARRATIVE, effects: [] };
     }
   };
 
@@ -1066,19 +937,10 @@ Rules:
   ): Promise<DirectiveActionInterpretation> => {
     const trimmedDirective = directive.trim();
     if (!trimmedDirective) {
-      return {
-        orders: [],
-        source: 'error',
-        note: '[AI Error] Directive is empty.',
-      };
+      return { orders: [], source: 'error', note: '[AI Error] Directive is empty.' };
     }
-
     if (!allowedActions.length) {
-      return {
-        orders: [],
-        source: 'error',
-        note: 'No actions are available for the selected faction.',
-      };
+      return { orders: [], source: 'error', note: 'No actions are available for the selected faction.' };
     }
 
     const stateJson = formatCompactStateForPrompt(state, factionId);
@@ -1087,15 +949,8 @@ Rules:
       name: action.name,
       requiresTarget: TARGET_REQUIRED_ACTIONS.has(action.id),
     }));
-    const messages: LlmMessage[] = [
-      {
-        role: 'system',
-        content:
-          'You convert natural-language directives into action selections for a strategy game. Return JSON only.',
-      },
-      {
-        role: 'user',
-        content: `Game snapshot:
+
+    const prompt = `Game snapshot:
 ${stateJson}
 
 Faction: ${factionId}
@@ -1120,41 +975,18 @@ Rules:
 - Use only allowed action ids.
 - Use a targetFactionId only for actions that require a target.
 - If a target is required, it must be one of the valid targets.
-- Use "secret" only when the directive clearly implies covert/private behavior.`,
-      },
-    ];
+- Use "secret" only when the directive clearly implies covert/private behavior.`;
 
     try {
       const raw = await withTimeout(
-        callLlm(messages, {
-          maxTokens: 260,
-          temperature: 0.2,
-          topP: 0.8,
-          model: gamemasterModel,
-          reasoningEffort: DEFAULT_GAMEMASTER_REASONING_EFFORT,
-          responseFormat: { type: 'json_object' },
-          timeoutMs: DEFAULT_GAMEMASTER_TIMEOUT_MS,
-        }),
+        gmInterpretDirective(prompt),
         DEFAULT_GAMEMASTER_TIMEOUT_MS,
         null,
       );
-
-      if (!raw) {
-        return {
-          orders: [],
-          source: 'error',
-          note: DIRECTIVE_ACTION_ERROR_NOTE,
-        };
-      }
+      if (!raw) return { orders: [], source: 'error', note: DIRECTIVE_ACTION_ERROR_NOTE };
 
       const snippet = extractJsonSnippet(raw, 'object');
-      if (!snippet) {
-        return {
-          orders: [],
-          source: 'error',
-          note: DIRECTIVE_ACTION_ERROR_NOTE,
-        };
-      }
+      if (!snippet) return { orders: [], source: 'error', note: DIRECTIVE_ACTION_ERROR_NOTE };
 
       const parsed = JSON.parse(snippet) as Record<string, unknown>;
       const rawOrders = Array.isArray(parsed.orders)
@@ -1172,11 +1004,7 @@ Rules:
       );
 
       if (orders.length < Math.max(1, maxActions)) {
-        return {
-          orders: [],
-          source: 'error',
-          note: DIRECTIVE_ACTION_ERROR_NOTE,
-        };
+        return { orders: [], source: 'error', note: DIRECTIVE_ACTION_ERROR_NOTE };
       }
 
       return {
@@ -1185,23 +1013,15 @@ Rules:
         note: `Plan: ${describeInterpretedOrders(orders, allowedActions, targets)}`,
       };
     } catch {
-      return {
-        orders: [],
-        source: 'error',
-        note: DIRECTIVE_ACTION_ERROR_NOTE,
-      };
+      return { orders: [], source: 'error', note: DIRECTIVE_ACTION_ERROR_NOTE };
     }
   };
 
   const getGameSummary = async (state: GameState): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'summary', maxWords: 100, maxSentences: 5 };
+    const outputConfig: TextOutputConfig = { kind: 'summary', maxWords: 100, maxSentences: 5 };
     const stateJson = formatCompactStateForPrompt(state);
     const recentHistory = history.slice(-10);
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Current game state:
+    const prompt = `Current game state:
 ${stateJson}
 
 Recent history:
@@ -1209,56 +1029,37 @@ ${JSON.stringify(recentHistory, null, 2)}
 
 Summarize the current state of the AGI race for the player.
 
-${buildJsonAnswerInstruction(config.maxWords)}`,
-      },
-    ];
-    return callForText(messages, { maxTokens: 250, temperature: 0.4 }, config, TEMPLATE_RESPONSES.summary(state));
+${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(gmSummary, prompt, outputConfig, TEMPLATE_RESPONSES.summary(state));
   };
 
   const askQuestion = async (question: string, state: GameState): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'question', maxWords: 80, maxSentences: 4 };
+    const outputConfig: TextOutputConfig = { kind: 'question', maxWords: 80, maxSentences: 4 };
     const stateJson = formatCompactStateForPrompt(state);
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Game state: ${stateJson}
+    const prompt = `Game state: ${stateJson}
 
 Player asks: "${question}"
 
-Answer briefly (2-3 sentences).`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 180, temperature: 0.4, responseFormat: { type: 'text' } },
-      config,
-      UNAVAILABLE_RESPONSE,
-    );
+Answer briefly (2-3 sentences).`;
+    return callForTextViaGm(gmAsk, prompt, outputConfig, UNAVAILABLE_RESPONSE);
   };
 
   const generateOpeningNarration = async (state: GameState, factionId: string): Promise<string> => {
     const faction = state.factions[factionId];
     if (!faction) return UNAVAILABLE_RESPONSE;
 
-    const config: TextOutputConfig = { kind: 'opening', maxWords: 120, maxSentences: 6 };
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Generate an analytical opening briefing for a new game.
+    const outputConfig: TextOutputConfig = { kind: 'opening', maxWords: 120, maxSentences: 6 };
+    const prompt = `Generate an analytical opening briefing for a new game.
 The player leads ${faction.name}, a ${faction.type === 'lab' ? 'private AI research laboratory' : 'government AI authority'}.
 Year: ${state.year}
 
 Create a concise strategic baseline describing stakes, constraints, and decision priorities.
 
-${buildJsonAnswerInstruction(config.maxWords)}`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 300, temperature: 0.7 },
-      config,
+${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(
+      gmOpening,
+      prompt,
+      outputConfig,
       TEMPLATE_RESPONSES.opening(state, factionId),
     );
   };
@@ -1270,7 +1071,7 @@ ${buildJsonAnswerInstruction(config.maxWords)}`,
     playerActions?: string[],
     diceRoll?: number,
   ): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'turn', maxWords: 80, maxSentences: 4 };
+    const outputConfig: TextOutputConfig = { kind: 'turn', maxWords: 80, maxSentences: 4 };
     const resolvedPlayerActions = playerActions ?? [];
     const turnNarrativeLog = turnLog.slice(-8).map((entry) => sanitizeLogForNarrative(entry));
     const resolvedDiceRoll = typeof diceRoll === 'number'
@@ -1287,11 +1088,8 @@ ${buildJsonAnswerInstruction(config.maxWords)}`,
             : resolvedDiceRoll <= 19
               ? 'Strong progress (16-19)'
               : 'Exceptional progress (20)';
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Turn ${state.turn} complete. Year ${state.year} Q${state.quarter}.
+
+    const prompt = `Turn ${state.turn} complete. Year ${state.year} Q${state.quarter}.
 Faction: ${state.factions[factionId]?.name ?? factionId}
 Events this turn: ${turnNarrativeLog.length > 0 ? turnNarrativeLog.join('; ') : 'None'}
 Player chosen actions: ${resolvedPlayerActions.length > 0 ? resolvedPlayerActions.join('; ') : 'None listed'}
@@ -1302,19 +1100,17 @@ Keep it vivid but concrete, and directly reference what the player tried this tu
 Never use variable names, IDs, or code-like notation.
 Use this interpretation: 1-5 adverse variance, 6-10 mild setback, 11-15 expected progress, 16-19 strong progress, 20 exceptional progress.
 
-${buildJsonAnswerInstruction(config.maxWords)}`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 200, temperature: 0.6 },
-      config,
+${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(
+      gmTurnSummary,
+      prompt,
+      outputConfig,
       TEMPLATE_RESPONSES.turnSummary(state, resolvedPlayerActions, resolvedDiceRoll),
     );
   };
 
   const narrateActionReview = async (request: ActionReviewRequest): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'turn', maxWords: 95, maxSentences: 4 };
+    const outputConfig: TextOutputConfig = { kind: 'turn', maxWords: 95, maxSentences: 4 };
     const describeShift = (value: number, noun: string): string => {
       if (value >= 8) return `${noun} surged`;
       if (value >= 3) return `${noun} improved`;
@@ -1357,11 +1153,8 @@ ${request.attributeChecks
   })
   .join('\n')}`
       : 'Attribute checks unavailable.';
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `Write one concise action-review brief as a strategic analyst.
+
+    const prompt = `Write one concise action-review brief as a strategic analyst.
 The brief must:
 - Explicitly name the action and actor.
 - State whether the action was open/public or secret/private.
@@ -1387,40 +1180,22 @@ ${attributeCheckText}
 Turn log context:
 ${reviewLog.length > 0 ? reviewLog.map((entry) => `- ${entry}`).join('\n') : '- No logged outcomes'}
 
-${buildJsonAnswerInstruction(config.maxWords)}`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 260, temperature: 0.65 },
-      config,
-      UNAVAILABLE_RESPONSE,
-    );
+${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(gmActionReview, prompt, outputConfig, UNAVAILABLE_RESPONSE);
   };
 
   const introduceEvent = async (event: EventDefinition, state: GameState, factionId: string): Promise<string> => {
-    const config: TextOutputConfig = { kind: 'eventIntro', maxWords: 80, maxSentences: 4 };
+    const outputConfig: TextOutputConfig = { kind: 'eventIntro', maxWords: 80, maxSentences: 4 };
     const faction = state.factions[factionId];
-    const messages: LlmMessage[] = [
-      { role: 'system', content: systemPrompt },
-      {
-        role: 'user',
-        content: `An event has occurred: "${event.title}"
+    const prompt = `An event has occurred: "${event.title}"
 Description: ${event.description}
 Faction: ${faction?.name ?? factionId}
 Year: ${state.year} Q${state.quarter}
 
 Introduce this event as an analyst briefing with concrete implications.
 
-${buildJsonAnswerInstruction(config.maxWords)}`,
-      },
-    ];
-    return callForText(
-      messages,
-      { maxTokens: 200, temperature: 0.7 },
-      config,
-      TEMPLATE_RESPONSES.eventIntro(event),
-    );
+${buildJsonAnswerInstruction(outputConfig.maxWords)}`;
+    return callForTextViaGm(gmIntroduceEvent, prompt, outputConfig, TEMPLATE_RESPONSES.eventIntro(event));
   };
 
   const recordEvent = (event: GameEvent): void => {
@@ -1431,12 +1206,7 @@ ${buildJsonAnswerInstruction(config.maxWords)}`,
   };
 
   const recordDirective = (turn: number, factionId: string, directive: string): void => {
-    recordEvent({
-      turn,
-      type: 'directive',
-      factionId,
-      directive,
-    });
+    recordEvent({ turn, type: 'directive', factionId, directive });
   };
 
   const getHistory = (): GameEvent[] => [...history];

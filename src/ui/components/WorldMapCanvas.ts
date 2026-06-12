@@ -506,12 +506,18 @@ const drawFrame = (inst: Instance): void => {
     });
   }
 
-  // Markers
+  // Markers — clamp to visible canvas with margin so labels and glyphs are
+  // never clipped under the left panel or outside canvas edges.
+  const MARKER_MARGIN = 32; // px clearance from each edge
   for (const faction of Object.values(state.factions)) {
-    const pos = screenPos.get(faction.id);
+    const rawPos = screenPos.get(faction.id);
     const geo = FACTION_GEO[faction.id];
-    if (!pos || !geo) continue;
-    drawMarker(ctx, faction, pos, geo.align, {
+    if (!rawPos || !geo) continue;
+    const clampedPos = {
+      x: Math.max(MARKER_MARGIN, Math.min(w - MARKER_MARGIN, rawPos.x)),
+      y: Math.max(MARKER_MARGIN, Math.min(h - MARKER_MARGIN, rawPos.y)),
+    };
+    drawMarker(ctx, faction, clampedPos, geo.align, {
       color: FACTION_MAP_COLORS[faction.id] ?? '#ffffff',
       isPlayer: faction.id === playerFactionId,
       isSelected: faction.id === selectedFactionId,

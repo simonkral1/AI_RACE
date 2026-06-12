@@ -14,11 +14,16 @@ Update (2026-06-10): The central screen is a cinematic canvas satellite map
 `WorldMap.ts` is unused). Layout is `layout--three-col`: factions | map | command center. Turns run a
 negotiation phase (`src/ai/negotiation.ts`) before AI decisions. AI factions are persistent Claude agents:
 `server/agentServer.ts` (`npm run agent-server`, port 8788, claude-sonnet-4-6 at low effort, one resumed
-session per faction per game) with browser client `src/ai/agentClient.ts`; fallback chain is agent ->
-OpenRouter proxy -> deterministic. Alliances are consent-based: `propose_alliance` messages and the player's
-"Propose Alliance" dossier button route through `/api/agents/respond` (the target's agent accepts/declines);
-AI factions cannot take the unilateral `form_alliance` action. `npx tsc --noEmit` passes. Quick full check:
-`node scripts/verify_map_setup.mjs` (needs Vite :5173 + llm-proxy :8787 + agent-server :8788; live turns
+session per faction per game) with browser client `src/ai/agentClient.ts`. Alliances are consent-based:
+`propose_alliance` messages and the player's "Propose Alliance" dossier button route through
+`/api/agents/respond` (the target's agent accepts/declines); AI factions cannot take the unilateral
+`form_alliance` action. `npx tsc --noEmit` passes.
+
+Update (2026-06-12 P6.0): GM narration migrated off OpenRouter onto the Claude Agent SDK.
+`server/agentServer.ts` now also serves `/api/gm/*` endpoints with a persistent GM session per game.
+`src/ai/gmClient.ts` is the browser client. `server/llmProxy.ts` is deprecated (kept, not deleted).
+Dev workflow is now two processes: `npm run dev` + `npm run agent-server`.
+Quick full check: `node scripts/verify_map_setup.mjs` (needs Vite :5173 + agent-server :8788; live turns
 take ~1-2 min because Sonnet agents think).
 
 This file is the fast-start context for future coding agents working in this repo.
@@ -64,11 +69,30 @@ Avoid legacy selectors unless you confirm they still exist:
 
 ## LLM and Deterministic Test Mode
 
-- Browser LLM calls are routed through `src/ai/llmClient.ts`.
-- Query param `no_llm=1` disables browser-side LLM calls (`callLlm` returns `null`), which makes automated browser runs deterministic and faster.
+- Browser GM calls are routed through `src/ai/gmClient.ts` → `/api/gm/*` → `server/agentServer.ts` (port 8788, Claude Agent SDK).
+- Faction agent calls (negotiate/decide/respond) continue to use `src/ai/agentClient.ts` → `/api/agents/*` → same agentServer.
+- Other AI calls (narrativeAI, eventAI, llmDecision) still use `src/ai/llmClient.ts` which routes through `/api/llm` → the deprecated llmProxy or server-side env vars.
+- Query param `no_llm=1` disables browser-side LLM/GM calls (`callLlm` and `gmClient` return `null`), keeping automated browser runs deterministic and faster.
 - Use `?no_llm=1` in browser tests unless you are explicitly validating live LLM behavior.
-- Proxy paths (`vite.config.ts`, `server/llmProxy.ts`) now degrade gracefully on failure (no hard 500 crash path for UI flows).
-- Local LLM proxy: `npm run llm-proxy` (defaults to `http://127.0.0.1:8787` via `LLM_PROXY_PORT`; Vite proxy can be overridden with `VITE_LLM_PROXY_URL`). Requires `OPENROUTER_API_KEY` for real responses; otherwise returns `content: null` in degraded mode.
+- `server/llmProxy.ts` is **deprecated** (P6.0): retained for reference but no longer the GM path. The `npm run llm-proxy` script still works for backward compatibility.
+
+### Dev workflow — two processes (P6.0+)
+
+```
+npm run dev           # Vite :5173
+npm run agent-server  # Faction agents + GM :8788
+```
+
+The old three-process workflow (adding `npm run llm-proxy`) is no longer needed for GM narration. llm-proxy is only required if `narrativeAI.ts` / `eventAI.ts` / `llmDecision.ts` are making live LLM calls and need the OpenRouter path.
+
+### GM configuration (env vars)
+
+| Var | Default | Purpose |
+|-----|---------|---------|
+| `GM_MODEL` | `claude-sonnet-4-6` | GM model (e.g. `claude-opus-4-5` for Opus) |
+| `GM_EFFORT` | `low` | Reasoning effort (`low`/`medium`/`high`) |
+| `GM_TIMEOUT_MS` | `20000` | Per-call timeout; client falls back on expiry |
+| `GM_MAX_HISTORY_EVENTS` | `12` | Rolling context cap for GM session |
 
 ## Test Status Snapshot
 

@@ -1,3 +1,4 @@
+import './tokens.css';
 import './styles.css';
 import './simple.css';
 
@@ -28,12 +29,14 @@ import { ActionChoice, ActionDefinition, GameState, TechNode, BranchId } from '.
 import { TECH_TREE } from '../data/techTree.js';
 import { ACTIONS } from '../data/actions.js';
 import { EVENTS, selectEvent, type EventDefinition, type EventChoice, type EventEffect } from '../data/events.js';
+import { applyEventEffects as applyEventEffectsCore } from '../core/eventEffects.js';
+import { formatEffectPreviewText } from '../core/effectFormatter.js';
 import { pickEventChoice } from '../ai/eventAI.js';
 import { generateDialogue, type DialogueLine } from '../ai/dialogueAI.js';
 import { saveToLocalStorage, loadFromLocalStorage } from '../core/persistence.js';
 import { startTutorial, hasTutorialCompleted } from './tutorial.js';
 import { playAdvance, playEvent, playSave, playLoad, playVictory, playDefeat, toggleAudio } from './audio.js';
-import { showSaveManager, autosave } from './saveManager.js';
+import { showSaveManager, autosave, probeAutosave, clearAutosave } from './saveManager.js';
 import { recordGameStart, recordGameEnd, showStatistics } from './statistics.js';
 import { cycleSpeed, getSpeedLabel } from './gameSpeed.js';
 import { renderFreeformActions } from './FreeformActions.js';
@@ -122,6 +125,13 @@ const endgameSubtitle = document.getElementById('endgameSubtitle');
 const endgameMeta = document.getElementById('endgameMeta');
 const endgameReset = document.getElementById('endgameReset');
 const headerElement = document.querySelector('header.topbar') as HTMLElement | null;
+
+/** Hide the endgame overlay via both class and HTML hidden attribute so a CSS-dead page never leaks it. */
+const hideEndgameOverlay = (): void => {
+  if (!endgameOverlay) return;
+  endgameOverlay.classList.add('is-hidden');
+  endgameOverlay.hidden = true;
+};
 const ordersContainer = document.querySelector('.orders') as HTMLElement | null;
 const eventPanel = document.getElementById('eventPanel');
 const commsLog = document.getElementById('commsLog');
@@ -444,60 +454,9 @@ const buildFactionDecisionContext = (factionId: string): string | undefined => {
     .join('\n');
 };
 
-const getEventTargetFactionIds = (
-  target: 'faction' | 'all_labs' | 'all_factions' | undefined,
-  factionId: string,
-): string[] => {
-  if (target === 'faction') return [factionId];
-  if (target === 'all_labs') {
-    return Object.values(state.factions)
-      .filter((faction) => faction.type === 'lab')
-      .map((faction) => faction.id);
-  }
-  return Object.keys(state.factions);
-};
 
 const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
-  for (const effect of effects) {
-    switch (effect.kind) {
-      case 'resource': {
-        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
-          const faction = state.factions[id];
-          if (!faction) continue;
-          applyResourceDelta(faction, { [effect.key]: effect.delta });
-        }
-        break;
-      }
-      case 'score': {
-        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
-          const faction = state.factions[id];
-          if (!faction) continue;
-          applyScoreDelta(faction, effect.key, effect.delta);
-        }
-        break;
-      }
-      case 'stat': {
-        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
-          const faction = state.factions[id];
-          if (!faction) continue;
-          applyStatDelta(faction, effect.key, effect.delta);
-        }
-        break;
-      }
-      case 'research': {
-        const faction = state.factions[factionId];
-        if (!faction) break;
-        addUnifiedResearch(faction, effect.delta);
-        break;
-      }
-      case 'globalSafety': {
-        state.globalSafety = clamp(state.globalSafety + effect.delta, 0, 100);
-        break;
-      }
-      default:
-        break;
-    }
-  }
+  applyEventEffectsCore(effects, factionId, state);
 };
 
 const handleTechResearch = (techId: string): void => {
@@ -540,27 +499,7 @@ const renderLog = (state: GameState): void => {
   state.log.length = 0;
 };
 
-const formatEffectPreview = (effects: EventEffect[]): string => {
-  const parts: string[] = [];
-  for (const effect of effects) {
-    const sign = effect.delta > 0 ? '+' : '';
-    switch (effect.kind) {
-      case 'resource':
-        parts.push(`${sign}${effect.delta} ${effect.key}`);
-        break;
-      case 'score':
-        parts.push(`${sign}${effect.delta} ${effect.key === 'capabilityScore' ? 'capability' : 'safety'}`);
-        break;
-      case 'stat':
-        parts.push(`${sign}${effect.delta} ${effect.key}`);
-        break;
-      case 'globalSafety':
-        parts.push(`${sign}${effect.delta} global safety`);
-        break;
-    }
-  }
-  return parts.join(' · ');
-};
+const formatEffectPreview = formatEffectPreviewText;
 
 // Initialize event modal
 const initEventModal = (): void => {
@@ -639,6 +578,12 @@ const renderEventPanel = (): void => {
     button.onclick = () => {
       const choiceId = button.dataset.eventChoice;
       if (!choiceId || !pendingEvent) return;
+      // Double-click guard: disable all choices immediately on first click
+      for (const btn of choiceButtons) {
+        btn.disabled = true;
+        btn.style.pointerEvents = 'none';
+        btn.style.opacity = '0.5';
+      }
       resolveEventChoice(choiceId);
     };
   }
@@ -936,67 +881,39 @@ const renderHeader = (state: GameState): void => {
 };
 
 const renderEndgameOverlay = (state: GameState): void => {
-  if (!endgameOverlay || !endgameTitle || !endgameSubtitle || !endgameMeta || !endgameReset) return;
+  if (!endgameOverlay) return;
 
   if (!campaignStarted || !state.gameOver) {
+    // Hide via both class and attribute so an unstyled/CSS-dead page never leaks content.
     endgameOverlay.classList.add('is-hidden');
+    endgameOverlay.hidden = true;
     return;
   }
 
-  const winner = state.winnerId ? state.factions[state.winnerId] : null;
   const victoryType = state.victoryType as VictoryType | undefined;
   const lossType = state.lossType as LossType | undefined;
 
-  if (winner) {
-    endgameTitle.textContent = `${winner.name} Wins`;
-    // Use victory type for more descriptive message
-    if (victoryType === 'safe_agi') {
-      endgameSubtitle.textContent = `Safe AGI deployed first in ${state.year} Q${state.quarter}.`;
-    } else if (victoryType === 'dominant') {
-      endgameSubtitle.textContent = `Achieved technological dominance in ${state.year} Q${state.quarter}.`;
-    } else if (victoryType === 'public_trust') {
-      endgameSubtitle.textContent = `Won through soft power and successful products.`;
-    } else if (victoryType === 'regulatory') {
-      endgameSubtitle.textContent = `Regulatory victory - all labs maintained safety through ${state.year}.`;
-    } else if (victoryType === 'alliance') {
-      endgameSubtitle.textContent = `Formed a global AI safety alliance.`;
-    } else if (victoryType === 'control') {
-      endgameSubtitle.textContent = `Achieved total control over AI development.`;
-    } else {
-      endgameSubtitle.textContent = `Campaign complete in ${state.year} Q${state.quarter}.`;
-    }
-  } else {
-    // Loss or stalemate
-    if (lossType === 'catastrophe') {
-      endgameTitle.textContent = 'Global Catastrophe';
-      endgameSubtitle.textContent = `Unsafe AGI deployment ended the campaign in ${state.year} Q${state.quarter}.`;
-    } else if (lossType === 'collapse') {
-      endgameTitle.textContent = 'Organization Collapsed';
-      endgameSubtitle.textContent = `Loss of soft power destroyed your organization.`;
-    } else if (lossType === 'obsolescence') {
-      endgameTitle.textContent = 'Made Obsolete';
-      endgameSubtitle.textContent = `Your faction fell too far behind in capability.`;
-    } else if (lossType === 'coup') {
-      endgameTitle.textContent = 'Government Overthrown';
-      endgameSubtitle.textContent = `AI labs grew too powerful and seized control.`;
-    } else {
-      endgameTitle.textContent = 'Stalemate';
-      endgameSubtitle.textContent = `The AGI race ended without a decisive victor.`;
-    }
+  // Build the full polished endgame card content using EndgameAnalysis component.
+  // The overlay card's inner elements (endgameTitle/endgameSubtitle/endgameMeta/endgameReset)
+  // are fully replaced by the analysis component output.
+  const card = endgameOverlay.querySelector('.overlay__card--endgame');
+  if (card) {
+    // Apply victory vs. defeat theming to the card wrapper.
+    const isVictory = !!victoryType;
+    card.classList.toggle('endgame-victory', isVictory);
+    card.classList.toggle('endgame-defeat', !isVictory);
+
+    const analysisElement = renderEndgameAnalysis(state, playerFactionId, {
+      victoryType,
+      lossType,
+      winnerId: state.winnerId,
+      onRestart: reset,
+    });
+    card.replaceChildren(analysisElement);
   }
 
-  // Render endgame analysis in the meta section
-  const analysisElement = renderEndgameAnalysis(state, playerFactionId, {
-    victoryType,
-    lossType,
-    winnerId: state.winnerId,
-    onRestart: reset,
-  });
-
-  // Replace the meta content with full analysis
-  endgameMeta.replaceChildren(analysisElement);
-
-  endgameReset.onclick = reset;
+  // Show overlay: remove hidden attribute AND is-hidden class.
+  endgameOverlay.removeAttribute('hidden');
   endgameOverlay.classList.remove('is-hidden');
 };
 
@@ -1066,28 +983,69 @@ const renderWorldMapPanel = (): void => {
   );
 };
 
-const render = (state: GameState): void => {
-  renderHeader(state);
-  renderFactions(state);
-  renderWorldMapPanel(); // World map is the central screen
-  renderCommandCenter(); // Command Center is now the main panel
-  renderLog(state);
-  renderFocusCard(state);
-  renderVictoryTrackerUI(state);
-  renderEventPanel();
-  renderCommsPanel();
-  renderGamemasterPanelUI();
-  renderEndgameOverlay(state);
+/** Render error banner — shown in-app when a render cycle throws. */
+let renderErrorBanner: HTMLElement | null = null;
+const showRenderError = (err: unknown): void => {
+  console.error('[AGI Race] Render error — state is autosaved, reload to continue:', err);
+  if (!renderErrorBanner) {
+    renderErrorBanner = document.createElement('div');
+    renderErrorBanner.id = 'renderErrorBanner';
+    renderErrorBanner.style.cssText = [
+      'position:fixed',
+      'top:0',
+      'left:0',
+      'right:0',
+      'padding:10px 20px',
+      'background:#8b2020',
+      'color:#fff',
+      'font-family:var(--mono,-apple-system,monospace)',
+      'font-size:12px',
+      'z-index:9000',
+      'display:flex',
+      'align-items:center',
+      'justify-content:space-between',
+    ].join(';');
+    const msg = document.createElement('span');
+    msg.textContent = 'Something broke rendering this turn — state is autosaved, reload to continue.';
+    const dismiss = document.createElement('button');
+    dismiss.textContent = 'Dismiss';
+    dismiss.style.cssText = 'background:rgba(255,255,255,0.2);border:none;color:#fff;padding:4px 8px;cursor:pointer;font-size:12px;border-radius:2px';
+    dismiss.onclick = () => { renderErrorBanner?.remove(); renderErrorBanner = null; };
+    renderErrorBanner.appendChild(msg);
+    renderErrorBanner.appendChild(dismiss);
+  }
+  // Always re-append in case it was removed
+  if (!document.getElementById('renderErrorBanner')) {
+    document.body.appendChild(renderErrorBanner);
+  }
+};
 
-  // Update tech tree modal if open
-  if (techTreeModalInstance?.isOpen()) {
-    const faction = state.factions[playerFactionId];
-    if (faction) {
-      techTreeModalInstance.update(faction, {
-        activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
-        selectedTechId: selectedTechId,
-      });
+const render = (state: GameState): void => {
+  try {
+    renderHeader(state);
+    renderFactions(state);
+    renderWorldMapPanel(); // World map is the central screen
+    renderCommandCenter(); // Command Center is now the main panel
+    renderLog(state);
+    renderFocusCard(state);
+    renderVictoryTrackerUI(state);
+    renderEventPanel();
+    renderCommsPanel();
+    renderGamemasterPanelUI();
+    renderEndgameOverlay(state);
+
+    // Update tech tree modal if open
+    if (techTreeModalInstance?.isOpen()) {
+      const faction = state.factions[playerFactionId];
+      if (faction) {
+        techTreeModalInstance.update(faction, {
+          activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
+          selectedTechId: selectedTechId,
+        });
+      }
     }
+  } catch (err) {
+    showRenderError(err);
   }
 };
 
@@ -1704,6 +1662,8 @@ const resolveEventChoice = (choiceId: string): void => {
   pendingEvent = null;
   pendingEventChoices.clear();
   state.globalSafety = computeGlobalSafety(state);
+  // Autosave after event choice so progress survives a reload mid-event
+  autosave(state, { playerFactionId, eventHistory });
   renderEventPanel();
   render(state);
 };
@@ -2160,8 +2120,8 @@ const advance = async (): Promise<void> => {
       renderOrdersSection();
     }
 
-    // Autosave after each turn
-    autosave(state);
+    // Autosave after each turn (include session context so resume works)
+    autosave(state, { playerFactionId, eventHistory });
 
     render(state);
   } finally {
@@ -2186,7 +2146,7 @@ const reset = (): void => {
     campaignStarted = false;
     startOverlay?.classList.remove('is-hidden');
   }
-  endgameOverlay?.classList.add('is-hidden');
+  hideEndgameOverlay();
   selectedTechId = null;
   directiveInterpretationRequestKey += 1;
   directiveInterpretationPending = false;
@@ -2545,6 +2505,9 @@ if (commandCenterContainer) {
 }
 
 const startCampaign = async (): Promise<void> => {
+  // Starting a fresh campaign — discard any stale autosave so it cannot
+  // surface on the next boot as a "Continue campaign" prompt.
+  clearAutosave();
   campaignStarted = true;
   ensureSelectedChatFaction();
   directiveInterpretationRequestKey += 1;
@@ -2554,7 +2517,7 @@ const startCampaign = async (): Promise<void> => {
   normalizeResearchForAllFactions();
   introSequenceInstance?.close();
   startOverlay?.classList.add('is-hidden');
-  endgameOverlay?.classList.add('is-hidden');
+  hideEndgameOverlay();
   setActiveOrderRow(0);
   renderPlayerControls();
   render(state);
@@ -2592,14 +2555,91 @@ const startCampaign = async (): Promise<void> => {
   }
 };
 
+/**
+ * Resume a campaign from the autosave slot.
+ * Restores GameState, playerFactionId, and eventHistory.
+ * On any failure falls through to the normal new-campaign flow.
+ */
+const resumeCampaign = async (): Promise<void> => {
+  const probe = probeAutosave();
+  if (!probe.exists) {
+    // Nothing to resume — fall through to normal start
+    renderStartOverlay();
+    return;
+  }
+
+  const loadFromLocalStorage_fn = loadFromLocalStorage;
+  const restoredState = loadFromLocalStorage_fn('autosave');
+
+  if (!restoredState) {
+    // Save was bad/incompatible — already cleared by loadFromLocalStorage
+    renderStartOverlay();
+    return;
+  }
+
+  // Restore session variables
+  state = restoredState;
+  if (probe.playerFactionId && state.factions[probe.playerFactionId]) {
+    playerFactionId = probe.playerFactionId;
+    focusFactionId = playerFactionId;
+  }
+  if (probe.eventHistory) {
+    eventHistory = probe.eventHistory;
+  }
+
+  normalizeResearchForAllFactions();
+
+  // Enter campaign mode directly
+  campaignStarted = true;
+  introSequenceInstance?.close();
+  startOverlay?.classList.add('is-hidden');
+  endgameOverlay?.classList.add('is-hidden');
+  ensureSelectedChatFaction();
+  directiveInterpretationRequestKey += 1;
+  directiveInterpretationPending = false;
+  resetPlayerOrdersForFaction();
+  setActiveOrderRow(0);
+  renderPlayerControls();
+  render(state);
+
+  recordGameStart(playerFactionId);
+
+  gamemasterLoading = true;
+  renderGamemasterPanelUI();
+  updateGamemasterModalState();
+  try {
+    const resumeNarration = await withRequestTimeout(
+      gamemaster.generateOpeningNarration(state, playerFactionId),
+    );
+    gamemasterNarrative = resumeNarration;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: resumeNarration, timestamp: Date.now() },
+    ];
+  } catch {
+    gamemasterNarrative = `Welcome back. The year is ${state.year} Q${state.quarter}. The race continues.`;
+    gamemasterChatHistory = [
+      ...gamemasterChatHistory,
+      { role: 'assistant' as const, content: gamemasterNarrative, timestamp: Date.now() },
+    ];
+  }
+  gamemasterLoading = false;
+  renderGamemasterPanelUI();
+  updateGamemasterModalState();
+};
+
 const renderStartOverlay = () => {
   if (!startOverlay) return;
   if (autoStart) {
     campaignStarted = true;
     startOverlay.classList.add('is-hidden');
-    endgameOverlay?.classList.add('is-hidden');
+    hideEndgameOverlay();
     return;
   }
+
+  // Check for a valid autosave to offer "Continue campaign"
+  const probe = probeAutosave();
+  const hasContinue = probe.exists && !!probe.meta && probe.meta.turn > 0;
 
   if (!introSequenceInstance) {
     introSequenceInstance = new IntroSequence(startOverlay, {
@@ -2613,8 +2653,48 @@ const renderStartOverlay = () => {
   }
 
   campaignStarted = false;
-  endgameOverlay?.classList.add('is-hidden');
+  hideEndgameOverlay();
   startOverlay.classList.remove('is-hidden');
+
+  // Inject a "Continue campaign" button at the top of the start overlay when
+  // a valid autosave is present, above the intro sequence content.
+  const existingContinue = startOverlay.querySelector('#continueOverlay');
+  if (hasContinue && !existingContinue) {
+    const meta = probe.meta!;
+    const savedAt = new Date(meta.savedAt).toLocaleString();
+    const continueEl = document.createElement('div');
+    continueEl.id = 'continueOverlay';
+    continueEl.className = 'continue-overlay';
+    continueEl.innerHTML = `
+      <div class="continue-card">
+        <div class="continue-card__label">Campaign in progress</div>
+        <div class="continue-card__meta">${meta.year} Q${meta.quarter} &mdash; Turn ${meta.turn}</div>
+        <div class="continue-card__date">Last saved ${savedAt}</div>
+        <div class="continue-card__actions">
+          <button class="continue-card__btn continue-card__btn--resume" id="continueResumeBtn">Continue campaign</button>
+          <button class="continue-card__btn continue-card__btn--new" id="continueNewBtn">New campaign</button>
+        </div>
+      </div>
+    `;
+    startOverlay.prepend(continueEl);
+
+    startOverlay.querySelector('#continueResumeBtn')?.addEventListener('click', () => {
+      continueEl.remove();
+      void resumeCampaign();
+    });
+
+    startOverlay.querySelector('#continueNewBtn')?.addEventListener('click', () => {
+      clearAutosave();
+      continueEl.remove();
+      introSequenceInstance!.open({ showBriefing: IntroSequence.shouldShow() });
+    });
+
+    // Show the continue card; keep the intro sequence hidden until "New campaign"
+    return;
+  } else if (!hasContinue) {
+    existingContinue?.remove();
+  }
+
   introSequenceInstance.open({
     showBriefing: IntroSequence.shouldShow(),
   });
@@ -2823,12 +2903,12 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
 
 document.addEventListener('keydown', handleKeyboardShortcuts);
 
-// Theme initialization - default to light (AI 2027 style)
+// Theme initialization - default to dark shell (cinematic command-center)
+// .theme-light = light shell brightness; no class = dark (default)
 const initTheme = (): void => {
   const savedTheme = localStorage.getItem('agi-race-theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  // Default to light theme (AI 2027 off-white style) unless user explicitly chose dark
-  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+  // Default to dark shell unless user previously chose light
+  const theme = savedTheme ?? 'dark';
   document.body.classList.toggle('theme-light', theme === 'light');
 };
 
@@ -2904,6 +2984,15 @@ injectFactionChatModalStyles(); // Inject faction chat modal styles
 injectCommandCenterStyles(); // Inject command center and tech tree modal styles
 initEventModal(); // Initialize event modal
 bindPlayerFactionHandler();
+
+// JS is running — dismiss the static boot-failure notice and unhide js-gated elements.
+const bootNotice = document.getElementById('bootNotice');
+if (bootNotice) bootNotice.hidden = true;
+// Remove data-js-hidden from every element that carries it (gear menu, etc.)
+document.querySelectorAll('[data-js-hidden]').forEach(el => {
+  el.removeAttribute('data-js-hidden');
+});
+
 renderStartOverlay();
 renderPlayerControls();
 render(state);

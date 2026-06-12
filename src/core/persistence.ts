@@ -13,26 +13,38 @@ export interface SerializedGameState {
   winnerId?: string;
   log: string[];
   version: number;
-  // New properties serialized as arrays
+  // Faction relationships serialized as arrays
   alliances?: [string, string[]][];
   tensions?: [string, number][];
   treaties?: string[];
   victoryType?: string;
   lossType?: string;
   loserId?: string;
+  // Campaign session context (v2+)
+  playerFactionId?: string;
+  eventHistory?: string[];
 }
 
 interface SerializedFactionState extends Omit<FactionState, 'unlockedTechs'> {
   unlockedTechs: string[];
 }
 
-const SAVE_VERSION = 1;
+/**
+ * Increment this integer whenever the schema changes in a breaking way.
+ * loadFromLocalStorage will discard saves with a different version and return null.
+ */
+export const SAVE_VERSION = 2;
 const STORAGE_KEY_PREFIX = 'agi_race_save_';
 
 /**
- * Convert GameState to a JSON-safe serializable format
+ * Convert GameState to a JSON-safe serializable format.
+ * Optionally embed campaign session context (playerFactionId, eventHistory)
+ * so a resume can fully restore the session without faction-select.
  */
-export const serializeState = (state: GameState): SerializedGameState => {
+export const serializeState = (
+  state: GameState,
+  sessionContext?: { playerFactionId?: string; eventHistory?: string[] },
+): SerializedGameState => {
   const serializedFactions: Record<string, SerializedFactionState> = {};
 
   for (const [id, faction] of Object.entries(state.factions)) {
@@ -59,15 +71,20 @@ export const serializeState = (state: GameState): SerializedGameState => {
     victoryType: state.victoryType,
     lossType: state.lossType,
     loserId: state.loserId,
+    // Session context
+    playerFactionId: sessionContext?.playerFactionId,
+    eventHistory: sessionContext?.eventHistory,
   };
 };
 
 /**
- * Restore GameState from serialized JSON format
+ * Restore GameState from serialized JSON format.
+ * Throws an error if the save version is incompatible — callers should catch
+ * and fall back to a fresh campaign.
  */
 export const deserializeState = (json: SerializedGameState): GameState => {
   if (json.version !== SAVE_VERSION) {
-    console.warn(`Save version mismatch: expected ${SAVE_VERSION}, got ${json.version}`);
+    throw new Error(`Save version mismatch: expected ${SAVE_VERSION}, got ${json.version}`);
   }
 
   const factions: Record<string, FactionState> = {};
@@ -163,16 +180,20 @@ export const getSaveSlots = (): string[] => {
 };
 
 /**
- * Save game state to localStorage
+ * Save game state to localStorage with optional session context.
  */
-export const saveToLocalStorage = (state: GameState, slot: string = 'autosave'): boolean => {
+export const saveToLocalStorage = (
+  state: GameState,
+  slot: string = 'autosave',
+  sessionContext?: { playerFactionId?: string; eventHistory?: string[] },
+): boolean => {
   if (typeof localStorage === 'undefined') {
     console.warn('localStorage not available');
     return false;
   }
 
   try {
-    const serialized = serializeState(state);
+    const serialized = serializeState(state, sessionContext);
     const key = `${STORAGE_KEY_PREFIX}${slot}`;
     const data = JSON.stringify({
       ...serialized,
@@ -187,7 +208,9 @@ export const saveToLocalStorage = (state: GameState, slot: string = 'autosave'):
 };
 
 /**
- * Load game state from localStorage
+ * Load game state from localStorage.
+ * Returns null if the slot is missing, corrupt, or has an incompatible schema version.
+ * A bad/stale save is automatically removed so it cannot block future boots.
  */
 export const loadFromLocalStorage = (slot: string = 'autosave'): GameState | null => {
   if (typeof localStorage === 'undefined') {
@@ -195,15 +218,42 @@ export const loadFromLocalStorage = (slot: string = 'autosave'): GameState | nul
     return null;
   }
 
+  const key = `${STORAGE_KEY_PREFIX}${slot}`;
   try {
-    const key = `${STORAGE_KEY_PREFIX}${slot}`;
     const data = localStorage.getItem(key);
     if (!data) return null;
 
     const parsed = JSON.parse(data) as SerializedGameState & { savedAt?: string };
     return deserializeState(parsed);
   } catch (error) {
-    console.error('Failed to load game:', error);
+    console.error('Failed to load game — clearing bad save:', error);
+    // Remove the bad/incompatible save so the player is never stuck
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+    return null;
+  }
+};
+
+/**
+ * Load the full serialized payload from localStorage (including session context
+ * fields such as playerFactionId and eventHistory) without full deserialization.
+ * Returns null if missing, corrupt, or incompatible version.
+ */
+export const loadRawAutosave = (slot: string = 'autosave'): (SerializedGameState & { savedAt?: string }) | null => {
+  if (typeof localStorage === 'undefined') return null;
+
+  const key = `${STORAGE_KEY_PREFIX}${slot}`;
+  try {
+    const data = localStorage.getItem(key);
+    if (!data) return null;
+    const parsed = JSON.parse(data) as SerializedGameState & { savedAt?: string };
+    if (parsed.version !== SAVE_VERSION) {
+      // Version mismatch — clear so boot is not blocked
+      try { localStorage.removeItem(key); } catch { /* ignore */ }
+      return null;
+    }
+    return parsed;
+  } catch {
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
     return null;
   }
 };
@@ -235,7 +285,7 @@ export const hasSaveSlot = (slot: string = 'autosave'): boolean => {
 /**
  * Get save metadata without loading full state
  */
-export const getSaveMetadata = (slot: string): { savedAt: string; turn: number; year: number; quarter: number } | null => {
+export const getSaveMetadata = (slot: string): { savedAt: string; turn: number; year: number; quarter: number; playerFactionId?: string } | null => {
   if (typeof localStorage === 'undefined') return null;
 
   try {
@@ -249,6 +299,7 @@ export const getSaveMetadata = (slot: string): { savedAt: string; turn: number; 
       turn: parsed.turn,
       year: parsed.year,
       quarter: parsed.quarter,
+      playerFactionId: parsed.playerFactionId,
     };
   } catch {
     return null;

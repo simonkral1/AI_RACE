@@ -1,12 +1,28 @@
 // Save Manager UI - Visual save/load interface
 
 import { GameState } from '../core/types.js';
-import { saveToLocalStorage, loadFromLocalStorage, getSaveSlots, deleteSaveSlot, getSaveMetadata } from '../core/persistence.js';
+import {
+  saveToLocalStorage,
+  loadFromLocalStorage,
+  loadRawAutosave,
+  getSaveSlots,
+  deleteSaveSlot,
+  getSaveMetadata,
+  hasSaveSlot,
+} from '../core/persistence.js';
 import { playSave, playLoad } from './audio.js';
 
 export interface SaveManagerCallbacks {
   onLoad: (state: GameState) => void;
   onClose: () => void;
+}
+
+/** Shape of the boot-time autosave probe result. */
+export interface AutosaveProbe {
+  exists: boolean;
+  meta: { savedAt: string; turn: number; year: number; quarter: number; playerFactionId?: string } | null;
+  playerFactionId?: string;
+  eventHistory?: string[];
 }
 
 const AUTOSAVE_SLOT = 'autosave';
@@ -218,8 +234,8 @@ export class SaveManager {
     this.saveToSlot('save_1');
   }
 
-  public autosave(state: GameState): void {
-    saveToLocalStorage(state, AUTOSAVE_SLOT);
+  public autosave(state: GameState, sessionContext?: { playerFactionId?: string; eventHistory?: string[] }): void {
+    saveToLocalStorage(state, AUTOSAVE_SLOT, sessionContext);
   }
 }
 
@@ -237,6 +253,45 @@ export const showSaveManager = (state: GameState, callbacks: SaveManagerCallback
   getSaveManager().show(state, callbacks);
 };
 
-export const autosave = (state: GameState): void => {
-  getSaveManager().autosave(state);
+/**
+ * Autosave the current campaign state to the autosave slot.
+ * Pass sessionContext to persist playerFactionId and eventHistory so
+ * a "Continue campaign" boot flow can fully restore the session.
+ */
+export const autosave = (state: GameState, sessionContext?: { playerFactionId?: string; eventHistory?: string[] }): void => {
+  getSaveManager().autosave(state, sessionContext);
+};
+
+/**
+ * Probe the autosave slot without fully deserializing — safe to call on every boot.
+ * Returns metadata for a "Continue campaign" button, or { exists: false } if none found.
+ */
+export const probeAutosave = (): AutosaveProbe => {
+  const raw = loadRawAutosave(AUTOSAVE_SLOT);
+  if (!raw) return { exists: false, meta: null };
+
+  const meta = {
+    savedAt: (raw as { savedAt?: string }).savedAt ?? 'Unknown',
+    turn: raw.turn,
+    year: raw.year,
+    quarter: raw.quarter,
+    playerFactionId: raw.playerFactionId,
+  };
+
+  return {
+    exists: true,
+    meta,
+    playerFactionId: raw.playerFactionId,
+    eventHistory: raw.eventHistory,
+  };
+};
+
+/**
+ * Clear the autosave slot — called when a new campaign is started so a stale
+ * save cannot surface on the next load.
+ */
+export const clearAutosave = (): void => {
+  if (hasSaveSlot(AUTOSAVE_SLOT)) {
+    deleteSaveSlot(AUTOSAVE_SLOT);
+  }
 };

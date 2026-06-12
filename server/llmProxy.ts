@@ -1,3 +1,18 @@
+/**
+ * @deprecated llmProxy.ts — OpenRouter-based LLM proxy (port 8787)
+ *
+ * DEPRECATED as of P6.0 (2026-06-12). Gamemaster narration has migrated to
+ * the Claude Agent SDK inside agentServer.ts (port 8788). The /api/gm/*
+ * endpoints on agentServer.ts replace the /api/llm endpoint served here.
+ *
+ * This file is retained for reference and to avoid breaking any external
+ * tooling that may reference it. The `npm run llm-proxy` script is also kept.
+ * Do NOT delete this file without auditing all callers first.
+ *
+ * Two-process dev workflow (replaces the old three-process workflow):
+ *   npm run dev           — Vite dev server (:5173)
+ *   npm run agent-server  — Faction agents + GM (:8788)
+ */
 import 'dotenv/config';
 import http from 'node:http';
 import { OpenRouter } from '@openrouter/sdk';

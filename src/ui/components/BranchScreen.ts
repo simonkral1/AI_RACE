@@ -476,8 +476,12 @@ export function renderBranchScreen(
   header.appendChild(headerLeft);
   header.appendChild(headerRight);
 
-  // ── Tier labels row ────────────────────────────────────────────────────────
+  // ── Canvas with absolutely-positioned nodes + SVG connectors ────────────────
+  const treeScroll = div({ className: 'branch-tree__scroll' });
+
+  // ── Tier labels row: placed INSIDE treeScroll so it scrolls with the canvas ──
   const tierLabels = div({ className: 'branch-tree__tier-labels' });
+  tierLabels.style.width = `${canvasW}px`;
   const depths = Array.from(new Set(Array.from(positions.values()).map(p => p.col))).sort((a, b) => a - b);
   for (const d of depths) {
     const label = div({
@@ -487,9 +491,8 @@ export function renderBranchScreen(
     });
     tierLabels.appendChild(label);
   }
+  treeScroll.appendChild(tierLabels);
 
-  // ── Canvas with absolutely-positioned nodes + SVG connectors ────────────────
-  const treeScroll = div({ className: 'branch-tree__scroll' });
   const canvas = div({ className: 'branch-tree__canvas' });
   canvas.style.width = `${canvasW}px`;
   canvas.style.height = `${canvasH}px`;
@@ -526,7 +529,6 @@ export function renderBranchScreen(
   // ── Assemble ────────────────────────────────────────────────────────────────
   const content = div({ className: 'branch-screen__content' });
   const treeWrap = div({ className: 'branch-screen__tree' });
-  treeWrap.appendChild(tierLabels);
   treeWrap.appendChild(treeScroll);
   content.appendChild(treeWrap);
   content.appendChild(detailPanel);
