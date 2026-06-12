@@ -4,13 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AGI Race</title>
+    <!-- Critical shell styles: visible before JS/CSS bundle loads.
+         These inline rules guard against CSS-dead skeleton leaking raw UI.
+         They co-exist with styles.css — .is-hidden in styles.css does the
+         same job once CSS loads, but this inline block is the belt-and-
+         suspenders fallback for the JS-dead / CSS-dead failure mode. -->
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f4f1ec; color: #1a1a1a; margin: 0; }
+      /* Boot notice: fullscreen until JS hides it */
+      #bootNotice { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #f4f1ec; z-index: 9999; flex-direction: column; gap: 12px; }
+      #bootNotice[hidden] { display: none; }
+      /* Elements with data-js-hidden are CSS-dead guards — hidden until JS removes the attribute */
+      [data-js-hidden] { display: none !important; }
+    </style>
     <script type="module" src="/src/ui/main.ts"></script>
   </head>
   <body>
+    <!-- Boot-failure notice: visible by default, hidden by JS on successful boot.
+         If the JS bundle never loads (dev-server hiccup), this stays visible. -->
+    <div id="bootNotice" aria-live="polite">
+      <div style="font-size:13px;color:#5a5a5a;max-width:420px;text-align:center;line-height:1.6;">
+        <div style="font-size:18px;font-weight:700;margin-bottom:8px;letter-spacing:0.05em;">AGI RACE</div>
+        Loading — if this message persists, the dev server hiccuped; reload the page.
+      </div>
+    </div>
+
     <div id="app" class="app">
       <div id="startOverlay" class="overlay">
       </div>
-      <div id="endgameOverlay" class="overlay is-hidden">
+      <!-- endgameOverlay: hidden via HTML 'hidden' attribute AND is-hidden class.
+           JS removes both when the game ends. A CSS/JS-dead page never reveals this. -->
+      <div id="endgameOverlay" class="overlay is-hidden" hidden>
         <div class="overlay__card overlay__card--endgame">
           <div id="endgameTitle" class="overlay__title">Campaign Complete</div>
           <div id="endgameSubtitle" class="overlay__subtitle"></div>
@@ -35,7 +59,9 @@
           </button>
           <div class="topbar__gear-btn" id="gearMenuBtn" title="Menu">
             ⚙
-            <div class="topbar__gear-menu" id="gearMenu">
+            <!-- Gear menu: data-js-hidden ensures it stays invisible when CSS fails to load.
+                 JS removes data-js-hidden at boot; thereafter CSS controls visibility via is-open. -->
+            <div class="topbar__gear-menu" id="gearMenu" data-js-hidden>
               <button class="topbar__gear-menu-item" id="gearReset">Reset Game</button>
               <button class="topbar__gear-menu-item" id="gearStats">Statistics</button>
               <button class="topbar__gear-menu-item" id="gearKeys">Keyboard (?)  </button>

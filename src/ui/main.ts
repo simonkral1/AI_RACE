@@ -124,6 +124,13 @@ const endgameSubtitle = document.getElementById('endgameSubtitle');
 const endgameMeta = document.getElementById('endgameMeta');
 const endgameReset = document.getElementById('endgameReset');
 const headerElement = document.querySelector('header.topbar') as HTMLElement | null;
+
+/** Hide the endgame overlay via both class and HTML hidden attribute so a CSS-dead page never leaks it. */
+const hideEndgameOverlay = (): void => {
+  if (!endgameOverlay) return;
+  endgameOverlay.classList.add('is-hidden');
+  endgameOverlay.hidden = true;
+};
 const ordersContainer = document.querySelector('.orders') as HTMLElement | null;
 const eventPanel = document.getElementById('eventPanel');
 const commsLog = document.getElementById('commsLog');
@@ -873,67 +880,39 @@ const renderHeader = (state: GameState): void => {
 };
 
 const renderEndgameOverlay = (state: GameState): void => {
-  if (!endgameOverlay || !endgameTitle || !endgameSubtitle || !endgameMeta || !endgameReset) return;
+  if (!endgameOverlay) return;
 
   if (!campaignStarted || !state.gameOver) {
+    // Hide via both class and attribute so an unstyled/CSS-dead page never leaks content.
     endgameOverlay.classList.add('is-hidden');
+    endgameOverlay.hidden = true;
     return;
   }
 
-  const winner = state.winnerId ? state.factions[state.winnerId] : null;
   const victoryType = state.victoryType as VictoryType | undefined;
   const lossType = state.lossType as LossType | undefined;
 
-  if (winner) {
-    endgameTitle.textContent = `${winner.name} Wins`;
-    // Use victory type for more descriptive message
-    if (victoryType === 'safe_agi') {
-      endgameSubtitle.textContent = `Safe AGI deployed first in ${state.year} Q${state.quarter}.`;
-    } else if (victoryType === 'dominant') {
-      endgameSubtitle.textContent = `Achieved technological dominance in ${state.year} Q${state.quarter}.`;
-    } else if (victoryType === 'public_trust') {
-      endgameSubtitle.textContent = `Won through soft power and successful products.`;
-    } else if (victoryType === 'regulatory') {
-      endgameSubtitle.textContent = `Regulatory victory - all labs maintained safety through ${state.year}.`;
-    } else if (victoryType === 'alliance') {
-      endgameSubtitle.textContent = `Formed a global AI safety alliance.`;
-    } else if (victoryType === 'control') {
-      endgameSubtitle.textContent = `Achieved total control over AI development.`;
-    } else {
-      endgameSubtitle.textContent = `Campaign complete in ${state.year} Q${state.quarter}.`;
-    }
-  } else {
-    // Loss or stalemate
-    if (lossType === 'catastrophe') {
-      endgameTitle.textContent = 'Global Catastrophe';
-      endgameSubtitle.textContent = `Unsafe AGI deployment ended the campaign in ${state.year} Q${state.quarter}.`;
-    } else if (lossType === 'collapse') {
-      endgameTitle.textContent = 'Organization Collapsed';
-      endgameSubtitle.textContent = `Loss of soft power destroyed your organization.`;
-    } else if (lossType === 'obsolescence') {
-      endgameTitle.textContent = 'Made Obsolete';
-      endgameSubtitle.textContent = `Your faction fell too far behind in capability.`;
-    } else if (lossType === 'coup') {
-      endgameTitle.textContent = 'Government Overthrown';
-      endgameSubtitle.textContent = `AI labs grew too powerful and seized control.`;
-    } else {
-      endgameTitle.textContent = 'Stalemate';
-      endgameSubtitle.textContent = `The AGI race ended without a decisive victor.`;
-    }
+  // Build the full polished endgame card content using EndgameAnalysis component.
+  // The overlay card's inner elements (endgameTitle/endgameSubtitle/endgameMeta/endgameReset)
+  // are fully replaced by the analysis component output.
+  const card = endgameOverlay.querySelector('.overlay__card--endgame');
+  if (card) {
+    // Apply victory vs. defeat theming to the card wrapper.
+    const isVictory = !!victoryType;
+    card.classList.toggle('endgame-victory', isVictory);
+    card.classList.toggle('endgame-defeat', !isVictory);
+
+    const analysisElement = renderEndgameAnalysis(state, playerFactionId, {
+      victoryType,
+      lossType,
+      winnerId: state.winnerId,
+      onRestart: reset,
+    });
+    card.replaceChildren(analysisElement);
   }
 
-  // Render endgame analysis in the meta section
-  const analysisElement = renderEndgameAnalysis(state, playerFactionId, {
-    victoryType,
-    lossType,
-    winnerId: state.winnerId,
-    onRestart: reset,
-  });
-
-  // Replace the meta content with full analysis
-  endgameMeta.replaceChildren(analysisElement);
-
-  endgameReset.onclick = reset;
+  // Show overlay: remove hidden attribute AND is-hidden class.
+  endgameOverlay.removeAttribute('hidden');
   endgameOverlay.classList.remove('is-hidden');
 };
 
@@ -1003,28 +982,69 @@ const renderWorldMapPanel = (): void => {
   );
 };
 
-const render = (state: GameState): void => {
-  renderHeader(state);
-  renderFactions(state);
-  renderWorldMapPanel(); // World map is the central screen
-  renderCommandCenter(); // Command Center is now the main panel
-  renderLog(state);
-  renderFocusCard(state);
-  renderVictoryTrackerUI(state);
-  renderEventPanel();
-  renderCommsPanel();
-  renderGamemasterPanelUI();
-  renderEndgameOverlay(state);
+/** Render error banner — shown in-app when a render cycle throws. */
+let renderErrorBanner: HTMLElement | null = null;
+const showRenderError = (err: unknown): void => {
+  console.error('[AGI Race] Render error — state is autosaved, reload to continue:', err);
+  if (!renderErrorBanner) {
+    renderErrorBanner = document.createElement('div');
+    renderErrorBanner.id = 'renderErrorBanner';
+    renderErrorBanner.style.cssText = [
+      'position:fixed',
+      'top:0',
+      'left:0',
+      'right:0',
+      'padding:10px 20px',
+      'background:#8b2020',
+      'color:#fff',
+      'font-family:var(--mono,-apple-system,monospace)',
+      'font-size:12px',
+      'z-index:9000',
+      'display:flex',
+      'align-items:center',
+      'justify-content:space-between',
+    ].join(';');
+    const msg = document.createElement('span');
+    msg.textContent = 'Something broke rendering this turn — state is autosaved, reload to continue.';
+    const dismiss = document.createElement('button');
+    dismiss.textContent = 'Dismiss';
+    dismiss.style.cssText = 'background:rgba(255,255,255,0.2);border:none;color:#fff;padding:4px 8px;cursor:pointer;font-size:12px;border-radius:2px';
+    dismiss.onclick = () => { renderErrorBanner?.remove(); renderErrorBanner = null; };
+    renderErrorBanner.appendChild(msg);
+    renderErrorBanner.appendChild(dismiss);
+  }
+  // Always re-append in case it was removed
+  if (!document.getElementById('renderErrorBanner')) {
+    document.body.appendChild(renderErrorBanner);
+  }
+};
 
-  // Update tech tree modal if open
-  if (techTreeModalInstance?.isOpen()) {
-    const faction = state.factions[playerFactionId];
-    if (faction) {
-      techTreeModalInstance.update(faction, {
-        activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
-        selectedTechId: selectedTechId,
-      });
+const render = (state: GameState): void => {
+  try {
+    renderHeader(state);
+    renderFactions(state);
+    renderWorldMapPanel(); // World map is the central screen
+    renderCommandCenter(); // Command Center is now the main panel
+    renderLog(state);
+    renderFocusCard(state);
+    renderVictoryTrackerUI(state);
+    renderEventPanel();
+    renderCommsPanel();
+    renderGamemasterPanelUI();
+    renderEndgameOverlay(state);
+
+    // Update tech tree modal if open
+    if (techTreeModalInstance?.isOpen()) {
+      const faction = state.factions[playerFactionId];
+      if (faction) {
+        techTreeModalInstance.update(faction, {
+          activeBranch: (activeBranch === 'all' ? 'capabilities' : activeBranch) as BranchId,
+          selectedTechId: selectedTechId,
+        });
+      }
     }
+  } catch (err) {
+    showRenderError(err);
   }
 };
 
@@ -2125,7 +2145,7 @@ const reset = (): void => {
     campaignStarted = false;
     startOverlay?.classList.remove('is-hidden');
   }
-  endgameOverlay?.classList.add('is-hidden');
+  hideEndgameOverlay();
   selectedTechId = null;
   directiveInterpretationRequestKey += 1;
   directiveInterpretationPending = false;
@@ -2496,7 +2516,7 @@ const startCampaign = async (): Promise<void> => {
   normalizeResearchForAllFactions();
   introSequenceInstance?.close();
   startOverlay?.classList.add('is-hidden');
-  endgameOverlay?.classList.add('is-hidden');
+  hideEndgameOverlay();
   setActiveOrderRow(0);
   renderPlayerControls();
   render(state);
@@ -2612,7 +2632,7 @@ const renderStartOverlay = () => {
   if (autoStart) {
     campaignStarted = true;
     startOverlay.classList.add('is-hidden');
-    endgameOverlay?.classList.add('is-hidden');
+    hideEndgameOverlay();
     return;
   }
 
@@ -2632,7 +2652,7 @@ const renderStartOverlay = () => {
   }
 
   campaignStarted = false;
-  endgameOverlay?.classList.add('is-hidden');
+  hideEndgameOverlay();
   startOverlay.classList.remove('is-hidden');
 
   // Inject a "Continue campaign" button at the top of the start overlay when
@@ -2963,6 +2983,15 @@ injectFactionChatModalStyles(); // Inject faction chat modal styles
 injectCommandCenterStyles(); // Inject command center and tech tree modal styles
 initEventModal(); // Initialize event modal
 bindPlayerFactionHandler();
+
+// JS is running — dismiss the static boot-failure notice and unhide js-gated elements.
+const bootNotice = document.getElementById('bootNotice');
+if (bootNotice) bootNotice.hidden = true;
+// Remove data-js-hidden from every element that carries it (gear menu, etc.)
+document.querySelectorAll('[data-js-hidden]').forEach(el => {
+  el.removeAttribute('data-js-hidden');
+});
+
 renderStartOverlay();
 renderPlayerControls();
 render(state);
