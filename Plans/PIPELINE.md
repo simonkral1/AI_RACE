@@ -27,7 +27,7 @@ A new player can: launch, pick a faction, understand what to do within 2 minutes
 - [x] **P0.4** Quick-fix batch: `+-5` effect formatting; raw stat keys in UI chips (`safetyculture` → "Safety Culture"); modal fade ≤300ms; tech-tier headers scroll with canvas; "you" map marker clipped under left panel; victory-progress emoji bars get labels/tooltips; event-choice buttons disabled after first click (double-click guard); regression unit test applying EVERY event choice in events.ts asserting no NaN/undefined stats and no spurious turn-2 endgame.
 
 ### P1 — Visual foundation (design system before cosmetics)
-- [ ] **P1.1** Design tokens: color palette (semantic roles), type scale, spacing, radii, shadows, motion durations in one CSS file; both themes (light editorial + dark map-centric) driven by tokens.
+- [x] **P1.1** Design tokens: color palette (semantic roles), type scale, spacing, radii, shadows, motion durations in one CSS file; both themes (light editorial + dark map-centric) driven by tokens.
 - [ ] **P1.2** Icon system: replace emoji/ad-hoc icons with a consistent SVG set (Lucide-style), sized/weighted uniformly; faction sigils.
 - [ ] **P1.3** Component pass: buttons, chips, cards, modals, tabs, tooltips unified to the tokens. Fix locked-tech-card contrast (names must be readable).
 - [ ] **P1.4** Menus & shell polish: faction select, intro/briefing, settings, top bar — professional layout, hierarchy, hover/focus states.
@@ -61,7 +61,7 @@ A new player can: launch, pick a faction, understand what to do within 2 minutes
 - [ ] **P5.6** Pacing: smooth tension/safety derivatives (no unexplained Low→Severe in one quarter); narrate causes.
 
 ### P6 — Agents & advisor (the LLM soul)
-- [ ] **P6.0** Migrate GM narration off OpenRouter/Gemini onto the **Claude Agent SDK** (Simon's directive 2026-06-11): serve GM from agentServer.ts (:8788) alongside faction agents, default **Sonnet 4.6 low effort** (configurable up to Opus low reasoning). Point the client at it, then retire `server/llmProxy.ts` and the `llm-proxy` npm script; two-process dev workflow afterward.
+- [x] **P6.0** Migrate GM narration off OpenRouter/Gemini onto the **Claude Agent SDK** (Simon's directive 2026-06-11): serve GM from agentServer.ts (:8788) alongside faction agents, default **Sonnet 4.6 low effort** (configurable up to Opus low reasoning). Point the client at it, then retire `server/llmProxy.ts` and the `llm-proxy` npm script; two-process dev workflow afterward.
 - [ ] **P6.1** Persona stakes: faction agents counter-offer, demand exclusivity, refuse off-brand deals (Nexus shouldn't instantly accept safety pacts), occasionally deceive; act-aware stance.
 - [ ] **P6.2** Binding proposals: a diplomacy action distinct from cheap talk, with mechanical effect and visible state.
 - [ ] **P6.3** Analyst situational awareness: injected game-state summary (affordable techs, rival moves, victory distance).
@@ -90,9 +90,13 @@ A new player can: launch, pick a faction, understand what to do within 2 minutes
 - 2026-06-12: Wave 2 merged — P0.3 endgame+hardening, P0.4 quick-fix batch (8 fixes, 37 tests), P7.2a smoke harness (6 scenarios, 61s). Gates: tsc clean, 324 pass/12 known-fail, smoke 6/6, screenshots reviewed. P0 COMPLETE.
 - 2026-06-12: Watch-item: endgame banner shows internal faction id-style name ("US AI Lab Alpha") — fix display names in P1.3 component pass.
 
+### P6.0b — REMNANT (next session)
+src/ai/llmDecision.ts, factionComms.ts, eventAI.ts, negotiation.ts, narrativeAI.ts, dialogueAI.ts, llmClient.ts still use the deprecated :8787 OpenRouter proxy. Migrate them to the Agent SDK server like the GM, then retire llmProxy.ts fully.
+
 ## Decisions log
 - 2026-06-11: Old shell loops in `scripts/` superseded by director-run pipeline for this effort.
 - 2026-06-11 (Simon): Git → all work on `overhaul` branch from 75d9be2; main untouched; he merges.
 - 2026-06-11 (Simon): Art direction → **Hybrid**: dark cinematic command-center in-game, editorial light menus/briefings/reports.
 - 2026-06-11 (Simon): LLM spend → deterministic `?no_llm=1` playtests + sparing live smoke tests per milestone.
 - 2026-06-11 (Simon): **No OpenRouter anywhere.** All in-game LLM (faction agents, GM, analyst) through the Claude Agent SDK. GM = Sonnet low effort (or Opus low reasoning) → P6.0.
+- 2026-06-12: Wave 3 merged: P1.1 hybrid tokens (approved on screenshot review), P6.0 GM on Agent SDK (11 endpoints, live-verified by agent on :8789; servers restarted onto new code, health OK). Session wrapped early on Simon's request: overhaul merged to main and pushed. Tests at wrap: tsc clean, 322 pass / 12 known-fail.
