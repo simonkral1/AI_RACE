@@ -23,8 +23,8 @@ A new player can: launch, pick a faction, understand what to do within 2 minutes
 ### P0 — Stability & trust (blockers, do first)
 - [x] **P0.1** ~~Fix campaign-ending crash~~ **Root-caused 2026-06-12 (director):** the "Campaign Complete / Safety 0" unstyled screen is index.html's *static skeleton* rendered with no CSS/JS — a hard page reload where Vite's module graph failed to boot (dev-env flake), NOT a game-logic bug. Event keys are correct camelCase; deterministic full event cycle verified clean via `output/overnight/repro_crash.mjs` (styles intact, no errors, game continues). Player-facing damage (run lost) already fixed by P0.2 autosave. Hardening folded into P0.3 (skeleton/boot fallback) and P0.4 (regression test, double-click guard).
 - [x] **P0.2** Autosave + resume: persist campaign every turn (localStorage via saveManager), "Continue campaign" on load, survive Vite HMR and reload. *(Merged 52c649f; unit + boot verified. Interactive resume click-through rides on the P7.2 smoke-harness rebuild.)*
-- [ ] **P0.3** Endgame screen: style it properly (victory AND loss), with stats summary and "New campaign" CTA. No raw HTML fallback ever. PLUS skeleton hardening: endgame overlay hidden via `hidden` attribute (not CSS-class-only), inline critical shell CSS or styled boot-failure notice so a JS-dead page never shows raw markup; render() error boundary.
-- [ ] **P0.4** Quick-fix batch: `+-5` effect formatting; raw stat keys in UI chips (`safetyculture` → "Safety Culture"); modal fade ≤300ms; tech-tier headers scroll with canvas; "you" map marker clipped under left panel; victory-progress emoji bars get labels/tooltips; event-choice buttons disabled after first click (double-click guard); regression unit test applying EVERY event choice in events.ts asserting no NaN/undefined stats and no spurious turn-2 endgame.
+- [x] **P0.3** Endgame screen: style it properly (victory AND loss), with stats summary and "New campaign" CTA. No raw HTML fallback ever. PLUS skeleton hardening: endgame overlay hidden via `hidden` attribute (not CSS-class-only), inline critical shell CSS or styled boot-failure notice so a JS-dead page never shows raw markup; render() error boundary.
+- [x] **P0.4** Quick-fix batch: `+-5` effect formatting; raw stat keys in UI chips (`safetyculture` → "Safety Culture"); modal fade ≤300ms; tech-tier headers scroll with canvas; "you" map marker clipped under left panel; victory-progress emoji bars get labels/tooltips; event-choice buttons disabled after first click (double-click guard); regression unit test applying EVERY event choice in events.ts asserting no NaN/undefined stats and no spurious turn-2 endgame.
 
 ### P1 — Visual foundation (design system before cosmetics)
 - [ ] **P1.1** Design tokens: color palette (semantic roles), type scale, spacing, radii, shadows, motion durations in one CSS file; both themes (light editorial + dark map-centric) driven by tokens.
@@ -69,7 +69,7 @@ A new player can: launch, pick a faction, understand what to do within 2 minutes
 
 ### P7 — Playability & balance
 - [ ] **P7.1** Onboarding: first-turn guided callouts (existing tutorial.ts audit/extend); "what do I do" affordances.
-- [ ] **P7.2a (URGENT — wave 2)** Rebuild `scripts/playtest_assert.mjs` against the current UI: boot → continue-or-new campaign → faction select → lock directive → advance quarter (deterministic) → event choice → assert no console errors/unstyled DOM at each step, screenshots to output/overnight/. This is the pipeline's regression smoke for every later wave.
+- [x] **P7.2a** Rebuild `scripts/playtest_assert.mjs` against the current UI: boot → continue-or-new campaign → faction select → lock directive → advance quarter (deterministic) → event choice → assert no console errors/unstyled DOM at each step, screenshots to output/overnight/. This is the pipeline's regression smoke for every later wave.
 - [ ] **P7.2** Automated playtest harness: scripted full-campaign runs in `?no_llm=1`, assert no crash, victory/loss reachable, stat ranges sane; run nightly each iteration.
 - [ ] **P7.3** Balance pass from playtest telemetry: income curves, tech costs, victory condition tuning (typical win turn 18–28 target).
 - [ ] **P7.4** Juice: micro-animations on stat changes, turn-start/end transitions, sound hooks (audio.ts exists).
@@ -85,6 +85,10 @@ A new player can: launch, pick a faction, understand what to do within 2 minutes
 - 2026-06-11: Pipeline charter created from live design review (see session). Baseline: repo clean at 75d9be2.
 - 2026-06-11: P0.2 autosave/resume merged (52c649f): versioned v2 saves, autosave on turn+event resolution, Continue-campaign boot overlay, 13 new tests. Gates: tsc clean, 287 pass / 12 known-fail, headless boot clean.
 - 2026-06-11: Infra: vitest now excludes `.claude/worktrees/**` and `.codex/**` (agent worktrees were being re-collected). `scripts/playtest_assert.mjs` found stale (`#startGame` no longer exists) → smoke-harness rebuild queued as urgent P7.2a.
+
+## Changelog (cont.)
+- 2026-06-12: Wave 2 merged — P0.3 endgame+hardening, P0.4 quick-fix batch (8 fixes, 37 tests), P7.2a smoke harness (6 scenarios, 61s). Gates: tsc clean, 324 pass/12 known-fail, smoke 6/6, screenshots reviewed. P0 COMPLETE.
+- 2026-06-12: Watch-item: endgame banner shows internal faction id-style name ("US AI Lab Alpha") — fix display names in P1.3 component pass.
 
 ## Decisions log
 - 2026-06-11: Old shell loops in `scripts/` superseded by director-run pipeline for this effort.
