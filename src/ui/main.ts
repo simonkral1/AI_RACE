@@ -28,6 +28,8 @@ import { ActionChoice, ActionDefinition, GameState, TechNode, BranchId } from '.
 import { TECH_TREE } from '../data/techTree.js';
 import { ACTIONS } from '../data/actions.js';
 import { EVENTS, selectEvent, type EventDefinition, type EventChoice, type EventEffect } from '../data/events.js';
+import { applyEventEffects as applyEventEffectsCore } from '../core/eventEffects.js';
+import { formatEffectPreviewText } from '../core/effectFormatter.js';
 import { pickEventChoice } from '../ai/eventAI.js';
 import { generateDialogue, type DialogueLine } from '../ai/dialogueAI.js';
 import { saveToLocalStorage, loadFromLocalStorage } from '../core/persistence.js';
@@ -444,60 +446,9 @@ const buildFactionDecisionContext = (factionId: string): string | undefined => {
     .join('\n');
 };
 
-const getEventTargetFactionIds = (
-  target: 'faction' | 'all_labs' | 'all_factions' | undefined,
-  factionId: string,
-): string[] => {
-  if (target === 'faction') return [factionId];
-  if (target === 'all_labs') {
-    return Object.values(state.factions)
-      .filter((faction) => faction.type === 'lab')
-      .map((faction) => faction.id);
-  }
-  return Object.keys(state.factions);
-};
 
 const applyEventEffects = (effects: EventEffect[], factionId: string): void => {
-  for (const effect of effects) {
-    switch (effect.kind) {
-      case 'resource': {
-        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
-          const faction = state.factions[id];
-          if (!faction) continue;
-          applyResourceDelta(faction, { [effect.key]: effect.delta });
-        }
-        break;
-      }
-      case 'score': {
-        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
-          const faction = state.factions[id];
-          if (!faction) continue;
-          applyScoreDelta(faction, effect.key, effect.delta);
-        }
-        break;
-      }
-      case 'stat': {
-        for (const id of getEventTargetFactionIds(effect.target, factionId)) {
-          const faction = state.factions[id];
-          if (!faction) continue;
-          applyStatDelta(faction, effect.key, effect.delta);
-        }
-        break;
-      }
-      case 'research': {
-        const faction = state.factions[factionId];
-        if (!faction) break;
-        addUnifiedResearch(faction, effect.delta);
-        break;
-      }
-      case 'globalSafety': {
-        state.globalSafety = clamp(state.globalSafety + effect.delta, 0, 100);
-        break;
-      }
-      default:
-        break;
-    }
-  }
+  applyEventEffectsCore(effects, factionId, state);
 };
 
 const handleTechResearch = (techId: string): void => {
@@ -540,27 +491,7 @@ const renderLog = (state: GameState): void => {
   state.log.length = 0;
 };
 
-const formatEffectPreview = (effects: EventEffect[]): string => {
-  const parts: string[] = [];
-  for (const effect of effects) {
-    const sign = effect.delta > 0 ? '+' : '';
-    switch (effect.kind) {
-      case 'resource':
-        parts.push(`${sign}${effect.delta} ${effect.key}`);
-        break;
-      case 'score':
-        parts.push(`${sign}${effect.delta} ${effect.key === 'capabilityScore' ? 'capability' : 'safety'}`);
-        break;
-      case 'stat':
-        parts.push(`${sign}${effect.delta} ${effect.key}`);
-        break;
-      case 'globalSafety':
-        parts.push(`${sign}${effect.delta} global safety`);
-        break;
-    }
-  }
-  return parts.join(' · ');
-};
+const formatEffectPreview = formatEffectPreviewText;
 
 // Initialize event modal
 const initEventModal = (): void => {
@@ -639,6 +570,12 @@ const renderEventPanel = (): void => {
     button.onclick = () => {
       const choiceId = button.dataset.eventChoice;
       if (!choiceId || !pendingEvent) return;
+      // Double-click guard: disable all choices immediately on first click
+      for (const btn of choiceButtons) {
+        btn.disabled = true;
+        btn.style.pointerEvents = 'none';
+        btn.style.opacity = '0.5';
+      }
       resolveEventChoice(choiceId);
     };
   }
