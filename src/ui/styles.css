@@ -4346,6 +4346,69 @@ button:focus-visible,
 }
 
 /* ==========================================================================
+   ENDGAME OVERLAY — polished campaign-over screen
+   The overlay__card--endgame variant is wider than the default card and
+   scrollable so the analysis fits on tall/narrow viewports.
+   Victory gets a green accent treatment; loss gets a red/muted treatment.
+   ========================================================================== */
+
+/* Wider card for endgame analysis */
+.overlay__card--endgame {
+  width: min(860px, 94vw);
+  max-height: 90vh;
+  overflow-y: auto;
+  text-align: left;
+  padding: 32px;
+  gap: 0;
+}
+
+/* Victory: topbar accent stripe */
+.overlay__card--endgame.endgame-victory {
+  border-top: 4px solid var(--accent-bright);
+}
+
+/* Loss: danger accent stripe */
+.overlay__card--endgame.endgame-defeat {
+  border-top: 4px solid var(--danger);
+}
+
+/* The endgame-analysis component inside the overlay fills naturally */
+.overlay__card--endgame .endgame-analysis {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  max-width: none;
+}
+
+/* Victory title: green */
+.overlay__card--endgame.endgame-victory .endgame-analysis__title {
+  color: var(--accent-bright);
+}
+
+/* Loss title: danger red */
+.overlay__card--endgame.endgame-defeat .endgame-analysis__title {
+  color: var(--danger);
+}
+
+/* Victory icon: slight tint */
+.overlay__card--endgame.endgame-victory .endgame-analysis__icon {
+  filter: drop-shadow(0 0 8px rgba(45, 90, 39, 0.4));
+}
+
+/* Loss icon: slight tint */
+.overlay__card--endgame.endgame-defeat .endgame-analysis__icon {
+  filter: drop-shadow(0 0 8px rgba(139, 32, 32, 0.35));
+  opacity: 0.9;
+}
+
+/* Prominent "Start New Campaign" button inside endgame overlay */
+.overlay__card--endgame .endgame-analysis__btn--primary {
+  padding: 14px 40px;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+/* ==========================================================================
    FACTION DETAIL SCREEN - Intelligence dossier modal
    ========================================================================== */
 
