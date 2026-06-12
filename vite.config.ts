@@ -32,6 +32,13 @@ export default defineConfig(({ mode }) => {
           timeout: 120000,
           proxyTimeout: 120000,
         },
+        '/api/gm': {
+          target: agentTarget,
+          changeOrigin: true,
+          // GM calls have a 20s server-side timeout; give the proxy a margin
+          timeout: 25000,
+          proxyTimeout: 25000,
+        },
       },
     },
   };

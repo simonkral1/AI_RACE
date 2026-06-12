@@ -8,6 +8,7 @@
     "dev:cli": "tsx src/cli.ts",
     "sim": "tsx src/cli.ts --sim",
     "llm-proxy": "tsx server/llmProxy.ts",
+    "llm-proxy:info": "echo 'DEPRECATED (P6.0): GM narration now runs in agent-server via Claude Agent SDK. llm-proxy retained for reference only.'",
     "agent-server": "tsx server/agentServer.ts",
     "build": "vite build",
     "preview": "vite preview",
