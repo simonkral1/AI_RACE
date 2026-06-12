@@ -3,24 +3,141 @@ import http from 'node:http';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
 /**
- * Faction Agent Server — one persistent Claude agent per faction.
+ * Faction Agent Server — one persistent Claude agent per faction,
+ * plus the Gamemaster (GM) agent that handles all narration and player guidance.
  *
  * Each AI faction is driven by its own Claude Agent SDK session running
- * claude-sonnet-4-6 at medium reasoning effort. Sessions persist across
+ * claude-sonnet-4-6 at low reasoning effort. Sessions persist across
  * turns (resume), so factions remember the whole game: prior negotiations,
  * betrayals, and their own strategy.
  *
- * Endpoints (consumed by the browser through the Vite proxy):
+ * The GM agent is also a persistent session (per gameId). It receives a
+ * compact rolling game-state context capped at GM_MAX_HISTORY_EVENTS events
+ * so it does not grow unboundedly.
+ *
+ * Faction endpoints (consumed by the browser through the Vite proxy):
  *   POST /api/agents/negotiate { gameId, factionId, prompt } -> {to, intent, message}
  *   POST /api/agents/decide    { gameId, factionId, prompt } -> {actions: [...]}
- *   POST /api/agents/reset     { gameId }                    -> clears faction sessions
+ *   POST /api/agents/respond   { gameId, factionId, prompt } -> {accept, reply}
+ *   POST /api/agents/reset     { gameId }                    -> clears all sessions
  *   GET  /api/agents/health                                  -> { ok, model }
+ *
+ * GM endpoints (consumed by the browser through the Vite proxy):
+ *   POST /api/gm/explain          { gameId, prompt }            -> { content }
+ *   POST /api/gm/advice           { gameId, prompt }            -> { content }
+ *   POST /api/gm/narrate-event    { gameId, prompt }            -> { content }
+ *   POST /api/gm/respond-directive{ gameId, prompt }            -> { content } (JSON)
+ *   POST /api/gm/interpret-directive { gameId, prompt }         -> { content } (JSON)
+ *   POST /api/gm/summary          { gameId, prompt }            -> { content }
+ *   POST /api/gm/ask              { gameId, prompt }            -> { content }
+ *   POST /api/gm/opening          { gameId, prompt }            -> { content }
+ *   POST /api/gm/turn-summary     { gameId, prompt }            -> { content }
+ *   POST /api/gm/introduce-event  { gameId, prompt }            -> { content }
+ *   POST /api/gm/action-review    { gameId, prompt }            -> { content }
  */
 
 const PORT = Number(process.env.AGENT_SERVER_PORT ?? 8788);
 const MODEL = process.env.AGENT_SERVER_MODEL ?? 'claude-sonnet-4-6';
 const EFFORT = (process.env.AGENT_SERVER_EFFORT ?? 'low') as 'low' | 'medium' | 'high';
+
+// GM-specific config: defaults match faction agent model but are independently tunable.
+// Set GM_MODEL=claude-opus-4-5 GM_EFFORT=low in .env to flip to Opus low-reasoning.
+const GM_MODEL = process.env.GM_MODEL ?? MODEL;
+const GM_EFFORT = (process.env.GM_EFFORT ?? EFFORT) as 'low' | 'medium' | 'high';
+const GM_TIMEOUT_MS = Number(process.env.GM_TIMEOUT_MS ?? 20_000);
+const GM_MAX_HISTORY_EVENTS = Number(process.env.GM_MAX_HISTORY_EVENTS ?? 12);
 const QUERY_TIMEOUT_MS = Number(process.env.AGENT_SERVER_TIMEOUT_MS ?? 90_000);
+
+// ---------------------------------------------------------------------------
+// GM persona & session registry
+// ---------------------------------------------------------------------------
+
+const GM_SYSTEM_PROMPT = `You are the Strategic Analyst of AGI Race, a strategy simulation about the development of artificial general intelligence (2026–2033, quarterly turns).
+
+Factions: three AI labs (OpenBrain, Nexus Labs, DeepCent) and two governments (US Executive, PRC Executive). Labs win by deploying safe AGI first or achieving capability/trust dominance. Governments win through regulatory control or alliance dominance. Deploying unsafe AGI causes global catastrophe — everyone loses.
+
+Your role: guide the player with structured analyst briefings — what happened, why it matters, and what to do next. Be wise, analytical, and concrete. Translate raw metrics into plain language. Never expose internal IDs, stat keys, or code tokens. Write like a human strategic brief, not telemetry output. Respond directly with your final answer only — no meta-commentary, no reasoning steps, no "let me think".`;
+
+// gameId -> GM Claude session id
+const gmSessions = new Map<string, string>();
+
+// gameId -> compact rolling event log (capped at GM_MAX_HISTORY_EVENTS)
+const gmHistory = new Map<string, string[]>();
+
+const addGmHistoryEntry = (gameId: string, entry: string): void => {
+  if (!gmHistory.has(gameId)) gmHistory.set(gameId, []);
+  const log = gmHistory.get(gameId)!;
+  log.push(entry);
+  if (log.length > GM_MAX_HISTORY_EVENTS) log.splice(0, log.length - GM_MAX_HISTORY_EVENTS);
+};
+
+const getGmHistoryContext = (gameId: string): string => {
+  const log = gmHistory.get(gameId) ?? [];
+  if (!log.length) return '';
+  return `\n\nRecent game history (${log.length} events):\n${log.map((entry, i) => `${i + 1}. ${entry}`).join('\n')}`;
+};
+
+/**
+ * Run a single GM query as a persistent Claude Agent SDK session.
+ * Returns the text content from the model, or null on timeout/failure.
+ * On timeout, the caller is responsible for returning a deterministic fallback.
+ */
+const runGmAgent = async (
+  gameId: string,
+  userPrompt: string,
+  historyEntry?: string,
+): Promise<string | null> => {
+  const key = `gm:${gameId}`;
+  const resume = gmSessions.get(key);
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), GM_TIMEOUT_MS);
+
+  // Append compact history context to give the GM continuity without unbounded growth
+  const historyContext = getGmHistoryContext(gameId);
+  const fullPrompt = historyContext ? `${userPrompt}${historyContext}` : userPrompt;
+
+  try {
+    const q = query({
+      prompt: fullPrompt,
+      options: {
+        model: GM_MODEL,
+        effort: GM_EFFORT,
+        systemPrompt: GM_SYSTEM_PROMPT,
+        maxTurns: 2,
+        tools: [],
+        settingSources: [],
+        persistSession: true,
+        ...(resume ? { resume } : {}),
+        abortController: abort,
+      },
+    });
+
+    let resultText: string | null = null;
+    for await (const message of q) {
+      if (message.type === 'result') {
+        clearTimeout(timer);
+        if (message.session_id) gmSessions.set(key, message.session_id);
+        if (message.subtype === 'success') {
+          resultText = typeof message.result === 'string' ? message.result.trim() : null;
+        } else {
+          console.error(`[AgentServer] GM/${gameId} error result:`, message.subtype);
+        }
+        break;
+      }
+    }
+    clearTimeout(timer);
+
+    if (resultText && historyEntry) {
+      addGmHistoryEntry(gameId, historyEntry);
+    }
+
+    return resultText;
+  } catch (error) {
+    clearTimeout(timer);
+    console.error(`[AgentServer] GM/${gameId} failed:`, (error as Error).message);
+    return null;
+  }
+};
 
 // ---------------------------------------------------------------------------
 // Faction personas
@@ -228,6 +345,26 @@ const sendJson = (res: http.ServerResponse, status: number, payload: unknown): v
   res.end(JSON.stringify(payload));
 };
 
+// ---------------------------------------------------------------------------
+// GM endpoint definitions
+// Each entry maps a URL suffix to a short log label.
+// All GM endpoints accept { gameId, prompt } and return { content: string | null }.
+// ---------------------------------------------------------------------------
+
+const GM_ENDPOINTS = new Set([
+  '/api/gm/explain',
+  '/api/gm/advice',
+  '/api/gm/narrate-event',
+  '/api/gm/respond-directive',
+  '/api/gm/interpret-directive',
+  '/api/gm/summary',
+  '/api/gm/ask',
+  '/api/gm/opening',
+  '/api/gm/turn-summary',
+  '/api/gm/introduce-event',
+  '/api/gm/action-review',
+]);
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     sendJson(res, 204, {});
@@ -237,7 +374,15 @@ const server = http.createServer(async (req, res) => {
   const url = req.url ?? '';
 
   if (req.method === 'GET' && url.startsWith('/api/agents/health')) {
-    sendJson(res, 200, { ok: true, model: MODEL, effort: EFFORT, sessions: sessions.size });
+    sendJson(res, 200, {
+      ok: true,
+      model: MODEL,
+      effort: EFFORT,
+      gmModel: GM_MODEL,
+      gmEffort: GM_EFFORT,
+      sessions: sessions.size,
+      gmSessions: gmSessions.size,
+    });
     return;
   }
 
@@ -256,13 +401,45 @@ const server = http.createServer(async (req, res) => {
 
   const gameId = String(body.gameId ?? 'default');
 
+  // -------------------------------------------------------------------------
+  // GM endpoints: { gameId, prompt } -> { content: string | null }
+  // -------------------------------------------------------------------------
+
+  if (GM_ENDPOINTS.has(url)) {
+    const prompt = String(body.prompt ?? '');
+    if (!prompt) {
+      sendJson(res, 400, { error: 'prompt required' });
+      return;
+    }
+
+    const endpointLabel = url.replace('/api/gm/', '');
+    const started = Date.now();
+    const content = await runGmAgent(gameId, prompt, `${endpointLabel}: ${prompt.slice(0, 60)}`);
+    const elapsed = Date.now() - started;
+    console.log(`[AgentServer] GM/${endpointLabel} game=${gameId} in ${elapsed}ms -> ${content ? `${content.length}ch` : 'null (fallback)'}`);
+
+    // Return { content } — null means "use deterministic fallback on client"
+    sendJson(res, 200, { content });
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // Reset: clears faction sessions AND GM session/history for a game
+  // -------------------------------------------------------------------------
+
   if (url.startsWith('/api/agents/reset')) {
     for (const key of [...sessions.keys()]) {
       if (key.startsWith(`${gameId}:`)) sessions.delete(key);
     }
+    gmSessions.delete(`gm:${gameId}`);
+    gmHistory.delete(gameId);
     sendJson(res, 200, { ok: true });
     return;
   }
+
+  // -------------------------------------------------------------------------
+  // Faction agent endpoints
+  // -------------------------------------------------------------------------
 
   const factionId = String(body.factionId ?? '');
   const prompt = String(body.prompt ?? '');
@@ -291,5 +468,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[AgentServer] Faction agents on http://127.0.0.1:${PORT} (model=${MODEL}, effort=${EFFORT})`);
+  console.log(`[AgentServer] Faction agents + GM on http://127.0.0.1:${PORT}`);
+  console.log(`  Faction model: ${MODEL} effort=${EFFORT}`);
+  console.log(`  GM model: ${GM_MODEL} effort=${GM_EFFORT} timeout=${GM_TIMEOUT_MS}ms`);
 });
