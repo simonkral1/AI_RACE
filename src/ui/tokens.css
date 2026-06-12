@@ -1,0 +1,338 @@
+/**
+ * tokens.css — P1.1 Design Token System
+ * AGI Race — Hybrid Art Direction
+ *
+ * DARK SHELL (default): cinematic command-center
+ *   Deep desaturated slate/navy surfaces with restrained glowing accents.
+ *   The war room you're running operations from.
+ *
+ * EDITORIAL OVERLAYS (always light): paper intelligence briefings
+ *   Cream/off-white surfaces, ink text, document feel.
+ *   --paper-* tokens for modals, event cards, faction select, endgame.
+ *
+ * Theme toggle (◐, window.toggleTheme):
+ *   Default = dark shell (no class on body)
+ *   Toggled = light shell (.theme-light on body)
+ *   Overlays/modals stay editorial (paper) in BOTH states.
+ */
+
+/* ============================================================
+   BASE: DARK SHELL (default — no class needed)
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Surface scale: shell (dark cinematic) --- */
+  --surface-0: #080d14;      /* deepest background, map behind */
+  --surface-1: #0d1520;      /* main app background */
+  --surface-2: #131d2b;      /* panel background */
+  --surface-3: #1a2535;      /* card / elevated surface */
+  --surface-4: #202d3d;      /* hover / focused surface */
+
+  /* --- Surface scale: editorial paper (overlays, always light) --- */
+  --paper-0: #f7f4ef;        /* page background */
+  --paper-1: #ffffff;        /* card surface */
+  --paper-2: #eee9e1;        /* inset / tinted area */
+
+  /* --- Text: shell (on dark surfaces) --- */
+  --text-on-dark-primary:   #e8edf2;    /* primary body, headings */
+  --text-on-dark-secondary: #9aaab8;    /* secondary / labels */
+  --text-on-dark-muted:     #5a6b7a;    /* placeholders, captions */
+  --text-on-dark-inverse:   #080d14;    /* text on light elements inside dark shell */
+
+  /* --- Text: paper (on light surfaces — editorial overlays) --- */
+  --text-on-paper-primary:   #1a1a1a;   /* main ink */
+  --text-on-paper-secondary: #4a4a4a;   /* secondary text */
+  --text-on-paper-muted:     #7a7a7a;   /* muted / caption */
+  --text-on-paper-accent:    #1a3a2a;   /* accent text on paper */
+
+  /* --- Legacy aliases (consumed by styles.css & components) --- */
+  /* Shell context — dark versions */
+  --bg:        var(--surface-1);
+  --bg-warm:   var(--surface-2);
+  --panel:     var(--surface-3);
+  --panel-soft: var(--surface-4);
+  --ink:       var(--text-on-dark-primary);
+  --muted:     var(--text-on-dark-secondary);
+  --text-2:    #c5d0da;
+  --text-3:    var(--text-on-dark-secondary);
+  --text-4:    var(--text-on-dark-muted);
+  --line:      rgba(140, 170, 200, 0.12);
+
+  /* --- Accent system --- */
+  /* Primary (safety/operations green — command room active indicator) */
+  --accent-primary:  #2a7a54;
+  --accent:          var(--accent-primary);
+  --accent-bright:   #3a9a6a;
+
+  /* Safety green (good/safe status) */
+  --accent-safety:   #3a9a6a;   /* 3:1+ on surface-2 */
+  --green-mid:       #3a9a6a;
+  --green-light:     #4db87e;
+  --green-bg:        rgba(42, 122, 84, 0.14);
+
+  /* Danger red (risk/alert) */
+  --accent-danger:   #d94f3d;
+  --danger:          var(--accent-danger);
+  --danger-bg:       rgba(217, 79, 61, 0.14);
+
+  /* Warning amber */
+  --accent-warning:  #c8882a;
+  --warning:         var(--accent-warning);
+  --accent-2:        var(--accent-warning);  /* legacy alias */
+  --warning-bg:      rgba(200, 136, 42, 0.14);
+
+  /* Info cyan (diplomacy) */
+  --accent-info:     #2fa8d0;
+  --info:            var(--accent-info);
+  --info-bg:         rgba(47, 168, 208, 0.14);
+
+  /* Capability branch colors */
+  --branch-capabilities: #c25040;
+  --branch-safety:       #3a9a6a;
+  --branch-ops:          #2f78c8;
+  --branch-hardPower:    #b06030;
+  --branch-policy:       #8050c0;
+
+  /* Risk levels */
+  --risk-0: var(--accent-safety);
+  --risk-1: var(--accent-warning);
+  --risk-2: var(--accent-danger);
+  --risk-3: #e83820;
+
+  /* --- Borders & lines --- */
+  --border-subtle:  rgba(140, 170, 200, 0.10);
+  --border-default: rgba(140, 170, 200, 0.18);
+  --border-strong:  rgba(140, 170, 200, 0.35);
+
+  /* --- Track / inset surface (replaces rgba(0,0,0,0.04-0.12) for dark compat) --- */
+  --surface-inset:  rgba(255, 255, 255, 0.05);
+  --surface-hover:  rgba(255, 255, 255, 0.07);
+
+  /* Paper borders (for editorial modals) */
+  --border-paper-subtle:  rgba(0, 0, 0, 0.06);
+  --border-paper-default: rgba(0, 0, 0, 0.10);
+  --border-paper-strong:  rgba(0, 0, 0, 0.20);
+
+  /* --- Shadows --- */
+  /* Subtle paper shadow (editorial overlays) */
+  --shadow-paper-sm:  0 2px 8px rgba(0, 0, 0, 0.10);
+  --shadow-paper-md:  0 8px 24px rgba(0, 0, 0, 0.12);
+  --shadow-paper-lg:  0 24px 64px rgba(0, 0, 0, 0.16);
+
+  /* Glow shadows (dark shell elements) */
+  --shadow-glow-green:  0 0 12px rgba(58, 154, 106, 0.30);
+  --shadow-glow-cyan:   0 0 12px rgba(47, 168, 208, 0.30);
+  --shadow-glow-amber:  0 0 10px rgba(200, 136, 42, 0.25);
+  --shadow-glow-red:    0 0 12px rgba(217, 79, 61, 0.35);
+  --shadow-shell-sm:    0 4px 16px rgba(0, 0, 0, 0.40);
+  --shadow-shell-md:    0 12px 36px rgba(0, 0, 0, 0.50);
+  --shadow-shell-lg:    0 30px 80px rgba(0, 0, 0, 0.60);
+
+  /* --- Border radius scale --- */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* --- Spacing scale (4px base) --- */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* --- Type scale (keep existing fonts, systematize sizes) --- */
+  --font:  'IBM Plex Sans', -apple-system, sans-serif;
+  --mono:  'IBM Plex Mono', monospace;
+  --serif: 'IBM Plex Serif', Georgia, serif;
+
+  --text-xs:   11px;
+  --text-sm:   13px;
+  --text-base: 15px;
+  --text-lg:   18px;
+  --text-xl:   22px;
+  --text-2xl:  28px;
+  --text-3xl:  36px;
+
+  --leading-tight:   1.25;
+  --leading-normal:  1.50;
+  --leading-relaxed: 1.65;
+
+  /* --- Motion durations --- */
+  --duration-fast:   150ms;
+  --duration-base:   250ms;
+  --duration-normal: 250ms;   /* alias */
+  --duration-slow:   400ms;
+
+  --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in:     cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* --- Z-index scale --- */
+  --z-base:     1;
+  --z-dropdown: 50;
+  --z-sticky:   100;
+  --z-overlay:  200;
+  --z-modal:    300;
+  --z-toast:    400;
+  --z-loading:  500;
+  --z-max:      9999;
+
+  /* --- Focus ring --- */
+  --focus-ring:        2px solid var(--accent-bright);
+  --focus-ring-offset: 2px;
+  --focus-ring-color:  rgba(58, 154, 106, 0.35);
+}
+
+/* ============================================================
+   LIGHT SHELL OVERRIDE (.theme-light on body)
+   The shell surfaces flip to light editorial.
+   Overlays/modals are UNAFFECTED — they use --paper-* tokens
+   which never change.
+   ============================================================ */
+
+body.theme-light {
+  color-scheme: light;
+
+  --surface-0: #eae8e4;
+  --surface-1: #f4f1ec;
+  --surface-2: #eae7e1;
+  --surface-3: #ffffff;
+  --surface-4: #f8f6f2;
+
+  --bg:        var(--surface-1);
+  --bg-warm:   var(--surface-2);
+  --panel:     var(--surface-3);
+  --panel-soft: var(--surface-4);
+
+  --ink:   #1a1a1a;
+  --muted: #5a5a5a;
+  --text-2: #3a3a3a;
+  --text-3: #5a5a5a;
+  --text-4: #888888;
+  --line:  rgba(0, 0, 0, 0.08);
+
+  --border-subtle:  rgba(0, 0, 0, 0.05);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-strong:  rgba(0, 0, 0, 0.18);
+
+  --surface-inset:  rgba(0, 0, 0, 0.04);
+  --surface-hover:  rgba(0, 0, 0, 0.06);
+
+  --text-on-dark-primary:   #1a1a1a;
+  --text-on-dark-secondary: #5a5a5a;
+  --text-on-dark-muted:     #888888;
+
+  --accent:           #1a3a2a;
+  --accent-primary:   #1a3a2a;
+  --accent-bright:    #2d5a42;
+  --accent-safety:    #2d5a42;
+  --green-mid:        #2d5a42;
+  --green-light:      #3d7a5a;
+  --green-bg:         rgba(26, 58, 42, 0.06);
+
+  --accent-warning:   #8b6914;
+  --warning:          #8b6914;
+  --accent-2:         #8b6914;
+  --warning-bg:       rgba(139, 105, 20, 0.06);
+
+  --accent-danger:    #8b2020;
+  --danger:           #8b2020;
+  --danger-bg:        rgba(139, 32, 32, 0.06);
+
+  --accent-info:      #1a4a8b;
+  --info:             #1a4a8b;
+  --info-bg:          rgba(26, 74, 139, 0.06);
+
+  --focus-ring-color: rgba(45, 90, 42, 0.35);
+
+  --shadow-shell-sm:  0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-shell-md:  0 12px 36px rgba(0, 0, 0, 0.12);
+  --shadow-shell-lg:  0 30px 80px rgba(0, 0, 0, 0.15);
+}
+
+/* ============================================================
+   EDITORIAL OVERLAY CONTEXT
+   Applied to .overlay, .event-modal-overlay, .tech-tree-modal-overlay,
+   .faction-detail-overlay, .comparison-overlay, .relationships-overlay,
+   .intro-overlay, and their card children.
+   These ALWAYS use paper tokens regardless of shell theme.
+   ============================================================ */
+
+/* All modal/overlay cards get paper surface regardless of shell */
+.overlay__card,
+.event-modal,
+.tech-tree-modal,
+.intro-card,
+.faction-detail-modal,
+.comparison-modal,
+.relationships-modal,
+.save-manager,
+.statistics-panel,
+.shortcuts-overlay .overlay__content {
+  --bg:        var(--paper-0);
+  --bg-warm:   var(--paper-2);
+  --panel:     var(--paper-1);
+  --panel-soft: var(--paper-2);
+  --ink:       var(--text-on-paper-primary);
+  --muted:     var(--text-on-paper-muted);
+  --text-2:    var(--text-on-paper-secondary);
+  --text-3:    var(--text-on-paper-muted);
+  --text-4:    #aaaaaa;
+  --line:      var(--border-paper-default);
+  --accent:    var(--text-on-paper-accent);
+  --accent-bright: #2d5a42;
+  --accent-2:  #8b6914;
+  --warning:   #8b6914;
+  --danger:    #8b2020;
+  background:  var(--paper-1);
+  color:       var(--text-on-paper-primary);
+}
+
+/* Endgame overlay card — always paper */
+.overlay__card--endgame {
+  --bg:        var(--paper-0);
+  --bg-warm:   var(--paper-2);
+  --panel:     var(--paper-1);
+  --panel-soft: var(--paper-2);
+  --ink:       var(--text-on-paper-primary);
+  --muted:     var(--text-on-paper-muted);
+  --text-2:    var(--text-on-paper-secondary);
+  --text-3:    var(--text-on-paper-muted);
+  --line:      var(--border-paper-default);
+  --accent:    var(--text-on-paper-accent);
+  --accent-bright: #2d5a42;
+  --accent-2:  #8b6914;
+  --danger:    #8b2020;
+  background:  var(--paper-1);
+  color:       var(--text-on-paper-primary);
+}
+
+/* Overlays with dark backdrop always have dark scrim */
+.overlay,
+.event-modal-overlay,
+.tech-tree-modal-overlay,
+.faction-detail-overlay,
+.comparison-overlay,
+.relationships-overlay {
+  background: rgba(10, 16, 24, 0.65);
+  backdrop-filter: blur(8px);
+}
+
+/* Light-theme: slightly lighter scrim */
+body.theme-light .overlay,
+body.theme-light .event-modal-overlay,
+body.theme-light .tech-tree-modal-overlay,
+body.theme-light .faction-detail-overlay,
+body.theme-light .comparison-overlay,
+body.theme-light .relationships-overlay {
+  background: rgba(26, 26, 26, 0.50);
+}

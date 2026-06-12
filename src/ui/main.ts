@@ -1,3 +1,4 @@
+import './tokens.css';
 import './styles.css';
 import './simple.css';
 
@@ -2902,12 +2903,12 @@ const handleKeyboardShortcuts = (event: KeyboardEvent): void => {
 
 document.addEventListener('keydown', handleKeyboardShortcuts);
 
-// Theme initialization - default to light (AI 2027 style)
+// Theme initialization - default to dark shell (cinematic command-center)
+// .theme-light = light shell brightness; no class = dark (default)
 const initTheme = (): void => {
   const savedTheme = localStorage.getItem('agi-race-theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  // Default to light theme (AI 2027 off-white style) unless user explicitly chose dark
-  const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+  // Default to dark shell unless user previously chose light
+  const theme = savedTheme ?? 'dark';
   document.body.classList.toggle('theme-light', theme === 'light');
 };
 
